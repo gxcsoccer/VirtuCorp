@@ -1,5 +1,5 @@
 {
-  "name": "@virtucorp/openclaw-plugin",
+  "name": "virtucorp",
   "version": "0.1.0",
   "private": true,
   "description": "VirtuCorp - AI-native autonomous software company as an OpenClaw plugin",
