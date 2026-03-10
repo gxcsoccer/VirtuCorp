@@ -89,10 +89,10 @@ describe("VirtuCorp plugin", () => {
     );
   });
 
-  test("throws on missing config", async () => {
+  test("throws on missing config", () => {
     const api = createMockPluginApi(undefined);
     // pluginConfig is undefined
     (api as Record<string, unknown>).pluginConfig = undefined;
-    await expect(plugin.register(api as never)).rejects.toThrow("missing plugin config");
+    expect(() => plugin.register(api as never)).toThrow("missing plugin config");
   });
 });

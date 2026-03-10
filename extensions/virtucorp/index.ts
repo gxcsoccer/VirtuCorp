@@ -29,7 +29,7 @@ export default {
   description: "AI-native autonomous software company",
   version: "0.1.0",
 
-  async register(api: OpenClawPluginApi) {
+  register(api: OpenClawPluginApi) {
     const config = resolveConfig(api.pluginConfig);
 
     api.logger.info(
