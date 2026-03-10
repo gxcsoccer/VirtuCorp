@@ -1,0 +1,61 @@
+{
+  "id": "virtucorp",
+  "name": "VirtuCorp",
+  "description": "AI-native autonomous software company powered by multi-agent collaboration on GitHub",
+  "version": "0.1.0",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "github": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "owner": { "type": "string" },
+          "repo": { "type": "string" },
+          "webhookSecret": { "type": "string" }
+        },
+        "required": ["owner", "repo"]
+      },
+      "projectDir": {
+        "type": "string",
+        "description": "Absolute path to the target project's local git checkout"
+      },
+      "sprint": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "durationDays": { "type": "number", "default": 14, "minimum": 1, "description": "Sprint length in days. Set to 1 for daily iterations." },
+          "autoRetro": { "type": "boolean", "default": true },
+          "heartbeatMinutes": { "type": "number", "description": "How often CEO checks for work (minutes). Auto-scales with sprint duration if unset." }
+        }
+      },
+      "budget": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "dailyLimitUsd": { "type": "number", "default": 5 },
+          "circuitBreakerRetries": { "type": "number", "default": 3 }
+        }
+      },
+      "roles": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "pm":  { "type": "object", "properties": { "model": { "type": "string" } } },
+          "dev": { "type": "object", "properties": { "model": { "type": "string" } } },
+          "qa":  { "type": "object", "properties": { "model": { "type": "string" } } },
+          "ops": { "type": "object", "properties": { "model": { "type": "string" } } }
+        }
+      }
+    },
+    "required": ["github", "projectDir"]
+  },
+  "uiHints": {
+    "github.owner": { "label": "GitHub Owner", "placeholder": "your-username" },
+    "github.repo": { "label": "Target Repo", "placeholder": "stock-trading-system" },
+    "github.webhookSecret": { "label": "Webhook Secret", "sensitive": true },
+    "projectDir": { "label": "Project Directory", "placeholder": "/path/to/project" },
+    "budget.dailyLimitUsd": { "label": "Daily Budget (USD)", "placeholder": "5" }
+  }
+}

@@ -1,0 +1,161 @@
+import { describe, test, expect, beforeEach, afterEach } from "vitest";
+import {
+  createMockPluginApi,
+  makeAgentContext,
+  makeToolCallEvent,
+} from "../test-helpers.js";
+import { registerPermissionGuard } from "./permission-guard.js";
+import { setRoleMetadata, clearRoleMetadata } from "../lib/role-metadata.js";
+
+describe("permission-guard hook", () => {
+  let api: ReturnType<typeof createMockPluginApi>;
+
+  beforeEach(() => {
+    api = createMockPluginApi();
+    registerPermissionGuard(api as never);
+  });
+
+  afterEach(() => {
+    clearRoleMetadata("session-dev");
+    clearRoleMetadata("session-qa");
+    clearRoleMetadata("session-pm");
+    clearRoleMetadata("session-ops");
+    clearRoleMetadata("session-ceo");
+  });
+
+  // ── vc_review_pr ──────────────────────────────────────────
+
+  test("allows QA to call vc_review_pr", async () => {
+    setRoleMetadata("session-qa", "qa");
+    const event = makeToolCallEvent({ toolName: "vc_review_pr" });
+    const ctx = makeAgentContext({ sessionKey: "session-qa" });
+    const result = await api._callHook("before_tool_call", event, ctx);
+    expect(result).toBeUndefined(); // undefined = allow
+  });
+
+  test("blocks Dev from calling vc_review_pr", async () => {
+    setRoleMetadata("session-dev", "dev");
+    const event = makeToolCallEvent({ toolName: "vc_review_pr" });
+    const ctx = makeAgentContext({ sessionKey: "session-dev" });
+    const result = await api._callHook("before_tool_call", event, ctx) as { block: boolean };
+    expect(result?.block).toBe(true);
+  });
+
+  test("blocks PM from calling vc_review_pr", async () => {
+    setRoleMetadata("session-pm", "pm");
+    const event = makeToolCallEvent({ toolName: "vc_review_pr" });
+    const ctx = makeAgentContext({ sessionKey: "session-pm" });
+    const result = await api._callHook("before_tool_call", event, ctx) as { block: boolean };
+    expect(result?.block).toBe(true);
+  });
+
+  // ── vc_merge_pr ───────────────────────────────────────────
+
+  test("allows QA to call vc_merge_pr", async () => {
+    setRoleMetadata("session-qa", "qa");
+    const event = makeToolCallEvent({ toolName: "vc_merge_pr" });
+    const ctx = makeAgentContext({ sessionKey: "session-qa" });
+    const result = await api._callHook("before_tool_call", event, ctx);
+    expect(result).toBeUndefined();
+  });
+
+  test("blocks Dev from calling vc_merge_pr", async () => {
+    setRoleMetadata("session-dev", "dev");
+    const event = makeToolCallEvent({ toolName: "vc_merge_pr" });
+    const ctx = makeAgentContext({ sessionKey: "session-dev" });
+    const result = await api._callHook("before_tool_call", event, ctx) as { block: boolean };
+    expect(result?.block).toBe(true);
+  });
+
+  // ── CEO (no role metadata) ────────────────────────────────
+
+  test("allows CEO (no role metadata) to use any vc_ tool", async () => {
+    // CEO session has no role metadata set
+    const event = makeToolCallEvent({ toolName: "vc_merge_pr" });
+    const ctx = makeAgentContext({ sessionKey: "session-ceo" });
+    const result = await api._callHook("before_tool_call", event, ctx);
+    expect(result).toBeUndefined();
+  });
+
+  // ── Non-vc tools ──────────────────────────────────────────
+
+  test("ignores non-vc tools", async () => {
+    setRoleMetadata("session-dev", "dev");
+    const event = makeToolCallEvent({ toolName: "execute_command" });
+    const ctx = makeAgentContext({ sessionKey: "session-dev" });
+    const result = await api._callHook("before_tool_call", event, ctx);
+    expect(result).toBeUndefined();
+  });
+
+  // ── Shell command interception ────────────────────────────
+
+  test("blocks Dev from running gh pr merge via shell", async () => {
+    setRoleMetadata("session-dev", "dev");
+    const event = makeToolCallEvent({
+      toolName: "execute_command",
+      params: { command: "gh pr merge 5 --squash" },
+    });
+    const ctx = makeAgentContext({ sessionKey: "session-dev" });
+    const result = await api._callHook("before_tool_call", event, ctx) as { block: boolean };
+    expect(result?.block).toBe(true);
+  });
+
+  test("blocks Dev from running gh pr review --approve via shell", async () => {
+    setRoleMetadata("session-dev", "dev");
+    const event = makeToolCallEvent({
+      toolName: "bash",
+      params: { command: "gh pr review 3 --approve" },
+    });
+    const ctx = makeAgentContext({ sessionKey: "session-dev" });
+    const result = await api._callHook("before_tool_call", event, ctx) as { block: boolean };
+    expect(result?.block).toBe(true);
+  });
+
+  test("allows QA to run gh pr merge via shell", async () => {
+    setRoleMetadata("session-qa", "qa");
+    const event = makeToolCallEvent({
+      toolName: "execute_command",
+      params: { command: "gh pr merge 5 --squash" },
+    });
+    const ctx = makeAgentContext({ sessionKey: "session-qa" });
+    const result = await api._callHook("before_tool_call", event, ctx);
+    expect(result).toBeUndefined();
+  });
+
+  // ── Vercel deployment interception ─────────────────────────
+
+  test("blocks Dev from running vercel deploy via shell", async () => {
+    setRoleMetadata("session-dev", "dev");
+    const event = makeToolCallEvent({
+      toolName: "bash",
+      params: { command: "vercel --prod" },
+    });
+    const ctx = makeAgentContext({ sessionKey: "session-dev" });
+    const result = await api._callHook("before_tool_call", event, ctx) as { block: boolean };
+    expect(result?.block).toBe(true);
+  });
+
+  test("allows Ops to run vercel deploy via shell", async () => {
+    setRoleMetadata("session-ops", "ops");
+    const event = makeToolCallEvent({
+      toolName: "execute_command",
+      params: { command: "vercel --prod" },
+    });
+    const ctx = makeAgentContext({ sessionKey: "session-ops" });
+    const result = await api._callHook("before_tool_call", event, ctx);
+    expect(result).toBeUndefined();
+  });
+
+  // ── General shell commands ──────────────────────────────────
+
+  test("allows Dev to run non-restricted shell commands", async () => {
+    setRoleMetadata("session-dev", "dev");
+    const event = makeToolCallEvent({
+      toolName: "execute_command",
+      params: { command: "gh pr list --json number,title" },
+    });
+    const ctx = makeAgentContext({ sessionKey: "session-dev" });
+    const result = await api._callHook("before_tool_call", event, ctx);
+    expect(result).toBeUndefined();
+  });
+});

@@ -1,0 +1,101 @@
+// VirtuCorp — Example OpenClaw Configuration
+//
+// Copy this to your OpenClaw config directory and fill in your values:
+//   cp openclawconfig.example.json5 ~/.openclaw/config/openclawconfig.json5
+//
+// Then start openclaw and run /vc-init to set up the target repo.
+
+{
+  // ── CEO Agent Configuration ─────────────────────────────
+  agentDefaults: {
+    model: { primary: "claude-opus-4-6" },
+    thinking: "high",
+
+    // Heartbeat: the CEO's autonomous heartbeat.
+    // On each tick, the CEO checks GitHub state and dispatches work.
+    heartbeat: {
+      intervalMinutes: 10,          // Match sprint.heartbeatMinutes
+      activeHours: { start: 8, end: 22 },
+    },
+
+    // Sub-agent limits
+    subagents: {
+      maxConcurrent: 3,             // PM + Dev + QA can run in parallel
+      maxSpawnDepth: 1,             // Sub-agents cannot spawn their own sub-agents
+      maxChildrenPerAgent: 5,
+      runTimeoutSeconds: 600,       // 10 min timeout per sub-agent
+    },
+  },
+
+  // ── VirtuCorp Plugin ────────────────────────────────────
+  plugins: {
+    load: {
+      // Point to where you cloned VirtuCorp
+      paths: ["/Users/lang/workspace/VirtuCorp/extensions/virtucorp"],
+    },
+    entries: {
+      virtucorp: {
+        github: {
+          owner: "gxcsoccer",              // ← CHANGE THIS
+          repo: "alpha-arena",             // ← CHANGE THIS
+          // webhookSecret: "${GITHUB_WEBHOOK_SECRET}",  // Optional: for GitHub webhook events
+        },
+
+        // Absolute path to your local clone of the target project
+        projectDir: "/path/to/your/project",  // ← CHANGE THIS
+
+        sprint: {
+          durationDays: 1,           // 1 = daily iterations (great for getting started)
+          autoRetro: true,
+          // heartbeatMinutes: 10,   // Auto-calculated based on durationDays
+        },
+
+        budget: {
+          dailyLimitUsd: 5,          // Daily token spend limit
+          circuitBreakerRetries: 3,  // Max retries per issue before escalating
+        },
+
+        // Model assignment per role
+        // Optimize: expensive models for planning, cheap models for coding
+        roles: {
+          pm:  { model: "claude-opus-4-6" },      // Needs strategic thinking
+          dev: { model: "claude-sonnet-4-6" },     // Needs coding ability
+          qa:  { model: "claude-sonnet-4-6" },     // Needs reasoning for review
+          ops: { model: "claude-haiku-3-5" },      // Simple doc tasks
+        },
+        // Other available models:
+        //   claude-opus-4-5, claude-sonnet-4-5
+        //   gemini-3-pro-preview, gemini-3-flash-preview
+        //   deepseek-v3.2, deepseek-v3.1
+        //   qwen3-coder-480b-a35b-instruct, qwen3-235b-a22b-instruct-2507
+        //   kimi-k2.5, kimi-k2-thinking
+        //   gpt-5.4, gpt-5.2
+        //   MiniMax-M2.5, glm-4.7
+      },
+    },
+  },
+
+  // ── Auth Profiles (multi-model support) ─────────────────
+  auth: {
+    profiles: {
+      anthropic: {
+        kind: "api_key",
+        apiKey: "${ANTHROPIC_API_KEY}",
+      },
+      // Uncomment to add more providers:
+      // "qwen-coder": {
+      //   kind: "api_key",
+      //   apiKey: "${QWEN_API_KEY}",
+      // },
+    },
+  },
+
+  // ── Feishu Channel (Investor Portal) ────────────────────
+  // Uncomment to enable Feishu notifications:
+  // channels: {
+  //   feishu: {
+  //     appId: "${FEISHU_APP_ID}",
+  //     appSecret: "${FEISHU_APP_SECRET}",
+  //   },
+  // },
+}
