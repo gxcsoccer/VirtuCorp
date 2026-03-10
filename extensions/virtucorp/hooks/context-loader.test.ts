@@ -82,6 +82,20 @@ describe("context-loader hook", () => {
     expect(result.prependContext).toContain("priority/p0");
   });
 
+  test("sub-agent context includes role identity", async () => {
+    setRoleMetadata("session-dev", "dev");
+    const event = { prompt: "test", messages: [] };
+    const ctx = makeAgentContext({ sessionKey: "session-dev" });
+    const result = await api._callHook("before_prompt_build", event, ctx) as {
+      prependContext: string;
+    };
+
+    expect(result.prependContext).toContain("Your Identity");
+    expect(result.prependContext).toContain("VirtuCorp Dev");
+    expect(result.prependContext).toContain("vc-dev@virtucorp.ai");
+    expect(result.prependContext).toContain("— vc:dev");
+  });
+
   // ── CEO context ───────────────────────────────────────────
 
   test("injects CEO prompt and live digest for heartbeat trigger", async () => {

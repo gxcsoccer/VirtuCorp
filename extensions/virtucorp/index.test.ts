@@ -58,6 +58,7 @@ describe("VirtuCorp plugin", () => {
       (call: unknown[]) => call[0],
     );
     expect(registeredHooks).toContain("subagent_spawning");
+    expect(registeredHooks).toContain("before_model_resolve");
     expect(registeredHooks).toContain("before_prompt_build");
     expect(registeredHooks).toContain("before_tool_call");
     expect(registeredHooks).toContain("subagent_ended");

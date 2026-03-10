@@ -57,8 +57,8 @@ plugins: {
   load: { paths: ["/path/to/VirtuCorp/extensions/virtucorp"] },
   entries: {
     virtucorp: {
-      github: { owner: "gxcsoccer", repo: "alpha-arena" },
-      projectDir: "/path/to/alpha-arena",
+      github: { owner: "gxcsoccer", repo: "AlphaArena" },
+      projectDir: "/path/to/AlphaArena",
       sprint: { durationDays: 1 },  // daily iterations to start
     }
   }
@@ -109,8 +109,9 @@ extensions/virtucorp/
 │   └── knowledge.ts         Team knowledge base: save / search / list
 ├── hooks/
 │   ├── role-injector.ts     Injects role config on sub-agent spawn
+│   ├── model-router.ts      Routes sub-agents to role-specific models
 │   ├── context-loader.ts    Injects GitHub state + role prompts
-│   ├── permission-guard.ts  Enforces role-based tool access
+│   ├── permission-guard.ts  Enforces role-based tool access + constitutional guard
 │   ├── usage-tracker.ts     Token budget monitoring
 │   └── task-router.ts       Cleanup on sub-agent completion
 ├── services/
@@ -131,6 +132,7 @@ extensions/virtucorp/
 3. **Agents as functions** — short-lived sub-agents, created per task, destroyed on completion
 4. **Permissions as architecture** — tool-level enforcement, not just prompt instructions
 5. **Constitutional governance** — layered rules prevent agents from modifying their own constraints
+6. **Self-evolution** — agents can improve VirtuCorp itself via `type/meta-improvement` issues, with investor approval required
 
 ### Permission Model
 
@@ -174,7 +176,7 @@ Knowledge is git-tracked and searchable. Agents are instructed to check existing
 ## Development
 
 ```bash
-npm test          # Run 90 unit tests
+npm test          # Run 100 unit tests
 npm run lint      # ESLint
 npm run typecheck # TypeScript check
 ```

@@ -13,6 +13,7 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core";
 import { resolveConfig } from "./config.js";
 import { registerContextLoader } from "./hooks/context-loader.js";
+import { registerModelRouter } from "./hooks/model-router.js";
 import { registerPermissionGuard } from "./hooks/permission-guard.js";
 import { registerRoleInjector } from "./hooks/role-injector.js";
 import { registerTaskRouter } from "./hooks/task-router.js";
@@ -41,6 +42,7 @@ export default {
 
     // ── Hooks ──────────────────────────────────────────────
     registerRoleInjector(api);
+    registerModelRouter(api, config);
     registerContextLoader(api, config);
     registerPermissionGuard(api);
     registerTaskRouter(api);

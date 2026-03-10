@@ -31,13 +31,13 @@
   plugins: {
     load: {
       // Point to where you cloned VirtuCorp
-      paths: ["/Users/lang/workspace/VirtuCorp/extensions/virtucorp"],
+      paths: ["/path/to/VirtuCorp/extensions/virtucorp"],  // ← CHANGE THIS
     },
     entries: {
       virtucorp: {
         github: {
           owner: "gxcsoccer",              // ← CHANGE THIS
-          repo: "alpha-arena",             // ← CHANGE THIS
+          repo: "AlphaArena",              // ← CHANGE THIS
           // webhookSecret: "${GITHUB_WEBHOOK_SECRET}",  // Optional: for GitHub webhook events
         },
 

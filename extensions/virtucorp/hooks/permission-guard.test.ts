@@ -122,6 +122,42 @@ describe("permission-guard hook", () => {
     expect(result).toBeUndefined();
   });
 
+  // ── Constitutional guard (protected files) ─────────────────
+
+  test("blocks Dev from editing permission-guard.ts", async () => {
+    setRoleMetadata("session-dev", "dev");
+    const event = makeToolCallEvent({
+      toolName: "edit",
+      params: { file_path: "/workspace/VirtuCorp/extensions/virtucorp/hooks/permission-guard.ts" },
+    });
+    const ctx = makeAgentContext({ sessionKey: "session-dev" });
+    const result = await api._callHook("before_tool_call", event, ctx) as { block: boolean; blockReason: string };
+    expect(result?.block).toBe(true);
+    expect(result?.blockReason).toContain("Constitutional guard");
+  });
+
+  test("blocks QA from writing to permission-guard.test.ts", async () => {
+    setRoleMetadata("session-qa", "qa");
+    const event = makeToolCallEvent({
+      toolName: "write",
+      params: { file_path: "/workspace/VirtuCorp/hooks/permission-guard.test.ts" },
+    });
+    const ctx = makeAgentContext({ sessionKey: "session-qa" });
+    const result = await api._callHook("before_tool_call", event, ctx) as { block: boolean };
+    expect(result?.block).toBe(true);
+  });
+
+  test("allows Dev to edit non-protected files", async () => {
+    setRoleMetadata("session-dev", "dev");
+    const event = makeToolCallEvent({
+      toolName: "edit",
+      params: { file_path: "/workspace/VirtuCorp/extensions/virtucorp/config.ts" },
+    });
+    const ctx = makeAgentContext({ sessionKey: "session-dev" });
+    const result = await api._callHook("before_tool_call", event, ctx);
+    expect(result).toBeUndefined();
+  });
+
   // ── Vercel deployment interception ─────────────────────────
 
   test("blocks Dev from running vercel deploy via shell", async () => {

@@ -31,12 +31,43 @@ async function loadRolePrompt(role: string): Promise<string> {
 
 // ── Static project context (for sub-agents) ─────────────────
 
-function buildProjectContext(config: VirtuCorpConfig): string {
-  return [
+const ROLE_DISPLAY_NAMES: Record<string, string> = {
+  pm: "VirtuCorp PM",
+  dev: "VirtuCorp Dev",
+  qa: "VirtuCorp QA",
+  ops: "VirtuCorp Ops",
+};
+
+const ROLE_EMAILS: Record<string, string> = {
+  pm: "vc-pm@virtucorp.ai",
+  dev: "vc-dev@virtucorp.ai",
+  qa: "vc-qa@virtucorp.ai",
+  ops: "vc-ops@virtucorp.ai",
+};
+
+function buildProjectContext(config: VirtuCorpConfig, role?: string): string {
+  const lines = [
     `## VirtuCorp Project Context`,
     `- **Repository**: ${config.github.owner}/${config.github.repo}`,
     `- **Project Directory**: ${config.projectDir}`,
     `- **Sprint Duration**: ${config.sprint.durationDays} days`,
+  ];
+
+  // Inject role identity so agents sign their work
+  if (role) {
+    const displayName = ROLE_DISPLAY_NAMES[role] ?? `VirtuCorp ${role}`;
+    const email = ROLE_EMAILS[role] ?? `vc-${role}@virtucorp.ai`;
+    lines.push(
+      ``,
+      `## Your Identity`,
+      `- **Role**: ${role} (label: vc:${role})`,
+      `- **Git Author**: ${displayName} <${email}>`,
+      `- **Signature**: — vc:${role}`,
+      `- All your GitHub actions (commits, comments, reviews) must be signed with your role identity.`,
+    );
+  }
+
+  lines.push(
     ``,
     `## Label Conventions`,
     `- Status: status/ready-for-dev, status/in-progress, status/in-review, status/done`,
@@ -48,7 +79,9 @@ function buildProjectContext(config: VirtuCorpConfig): string {
     `2. When starting work, change label to "status/in-progress"`,
     `3. After creating PR, change to "status/in-review"`,
     `4. After merge, change to "status/done"`,
-  ].join("\n");
+  );
+
+  return lines.join("\n");
 }
 
 // ── Live GitHub state digest (for CEO) ──────────────────────
@@ -154,9 +187,9 @@ export function registerContextLoader(api: OpenClawPluginApi, config: VirtuCorpC
     const role = getRoleMetadata(ctx.sessionKey);
 
     if (role) {
-      // Sub-agent: inject role prompt + static project context
+      // Sub-agent: inject role prompt + static project context (with identity)
       const rolePrompt = await loadRolePrompt(role);
-      const projectContext = buildProjectContext(config);
+      const projectContext = buildProjectContext(config, role);
       return {
         prependSystemContext: rolePrompt,
         prependContext: projectContext,
