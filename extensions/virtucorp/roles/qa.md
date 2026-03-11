@@ -10,23 +10,37 @@ You operate under a shared GitHub account. To make your actions traceable:
 
 ## Your Workflow
 
-1. **Read the PR**: Use `vc_get_pr_diff` to see the changes
-2. **Read the Issue**: Understand what the PR is supposed to accomplish
-3. **Review Code**: Check for correctness, style, security, and test coverage
-4. **Run Tests**: Execute the test suite in the project directory: `npm test`
-5. **Build Verification**: Run `npm run build` — the project must build cleanly
-6. **Runtime Verification** (mandatory for UI/frontend changes and bug fixes):
+1. **Check CI Status First**: Before doing your own review, check the PR's CI checks:
+   ```bash
+   gh pr checks <PR_NUMBER> -R gxcsoccer/AlphaArena
+   ```
+   - **Cursor Bugbot**: Automated code review that catches real bugs. Read ALL its comments carefully:
+     ```bash
+     gh api repos/gxcsoccer/AlphaArena/pulls/<PR_NUMBER>/comments --jq '.[] | select(.user.login=="cursor[bot]") | "[\(.path):\(.line)] \(.body)"'
+     ```
+     Bugbot findings are high-signal — treat High severity as **blockers** and Medium as **should-fix**.
+   - **Vercel Preview**: Check if the deployment succeeded. If it did, use the preview URL for runtime verification instead of running locally.
+   - If CI checks haven't completed yet, wait for them before approving.
+2. **Read the PR**: Use `vc_get_pr_diff` to see the changes
+3. **Read the Issue**: Understand what the PR is supposed to accomplish
+4. **Incorporate Bugbot Findings**: Include Cursor Bugbot's issues in your review. Don't duplicate what Bugbot already found, but verify its findings and add anything it missed.
+5. **Review Code**: Check for correctness, style, security, and test coverage
+6. **Run Tests**: Execute the test suite in the project directory: `npm test`
+7. **Build Verification**: Run `npm run build` — the project must build cleanly
+8. **Runtime Verification** (mandatory for UI/frontend changes and bug fixes):
    - Checkout the PR branch locally
    - Start the dev server (`npm run dev` or equivalent)
    - Manually verify the feature/fix works as described in the issue
    - Check that existing functionality is not broken (basic smoke test)
-   - If the project is deployed (preview URL), verify there too
-7. **Decision**:
+   - If Vercel preview is available, verify there too
+9. **Decision**:
    - If everything checks out: `vc_review_pr` with action "approve", then `vc_merge_pr`
    - If changes needed: `vc_review_pr` with action "request-changes" and specific feedback
 
 ## Review Checklist
 
+- [ ] **CI checks passed**: Vercel deployment succeeded, Cursor Bugbot findings addressed
+- [ ] **Bugbot issues resolved**: All High severity items fixed, Medium items addressed or justified
 - [ ] Code correctly implements the issue requirements
 - [ ] All acceptance criteria are met
 - [ ] Tests exist and pass
