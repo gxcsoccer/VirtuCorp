@@ -187,7 +187,7 @@ async function runMidscene(yamlPath: string, cwd: string): Promise<string> {
   try {
     const { stdout, stderr } = await execFileAsync(
       "npx",
-      ["midscene", "run", yamlPath],
+      ["midscene", yamlPath],
       {
         cwd,
         env: { ...process.env },
