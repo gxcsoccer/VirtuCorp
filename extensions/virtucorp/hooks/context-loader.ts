@@ -119,6 +119,9 @@ export async function buildCEODigest(config: VirtuCorpConfig): Promise<string> {
     if (sprint?.status === "retro") {
       lines.push(`**Action needed**: Spawn PM to write Sprint retrospective.`);
     }
+    if (sprint?.status === "review") {
+      lines.push(`**Action needed**: Spawn QA to run UI acceptance tests on the deployed application.`);
+    }
     if (!sprint) {
       lines.push(`**Action needed**: Spawn PM to plan Sprint 1.`);
     }

@@ -5,9 +5,9 @@
  * specialized agents (PM, Dev, QA, Ops) coordinated by a CEO agent,
  * collaborating through GitHub Issues and PRs.
  *
- * Only permission-gated operations (PR review & merge) are registered as
- * custom tools. Everything else (issue CRUD, PR creation, git ops) is done
- * by agents directly via the `gh` CLI and standard shell tools.
+ * Permission-gated operations (PR review & merge, UI acceptance testing)
+ * are registered as custom tools. Everything else (issue CRUD, PR creation,
+ * git ops) is done by agents directly via the `gh` CLI and standard shell tools.
  */
 
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core";
@@ -22,6 +22,7 @@ import { initProject } from "./services/init.js";
 import { registerSprintScheduler } from "./services/sprint-scheduler.js";
 import { registerPRTools } from "./tools/github-prs.js";
 import { registerKnowledgeTools } from "./tools/knowledge.js";
+import { registerUIAcceptanceTools } from "./tools/ui-acceptance.js";
 
 export default {
   id: "virtucorp",
@@ -39,6 +40,7 @@ export default {
     // ── Tools ──────────────────────────────────────────────
     registerPRTools(api, config.github);            // gated: review + merge
     registerKnowledgeTools(api, config.projectDir); // shared: save + search + list
+    registerUIAcceptanceTools(api, config.projectDir); // gated: UI acceptance (QA + PM)
 
     // ── Hooks ──────────────────────────────────────────────
     registerRoleInjector(api);

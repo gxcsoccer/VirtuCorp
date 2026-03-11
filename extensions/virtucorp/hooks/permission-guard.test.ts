@@ -182,6 +182,40 @@ describe("permission-guard hook", () => {
     expect(result).toBeUndefined();
   });
 
+  // ── vc_ui_accept ────────────────────────────────────────────
+
+  test("allows QA to call vc_ui_accept", async () => {
+    setRoleMetadata("session-qa", "qa");
+    const event = makeToolCallEvent({ toolName: "vc_ui_accept" });
+    const ctx = makeAgentContext({ sessionKey: "session-qa" });
+    const result = await api._callHook("before_tool_call", event, ctx);
+    expect(result).toBeUndefined();
+  });
+
+  test("allows PM to call vc_ui_accept", async () => {
+    setRoleMetadata("session-pm", "pm");
+    const event = makeToolCallEvent({ toolName: "vc_ui_accept" });
+    const ctx = makeAgentContext({ sessionKey: "session-pm" });
+    const result = await api._callHook("before_tool_call", event, ctx);
+    expect(result).toBeUndefined();
+  });
+
+  test("blocks Dev from calling vc_ui_accept", async () => {
+    setRoleMetadata("session-dev", "dev");
+    const event = makeToolCallEvent({ toolName: "vc_ui_accept" });
+    const ctx = makeAgentContext({ sessionKey: "session-dev" });
+    const result = await api._callHook("before_tool_call", event, ctx) as { block: boolean };
+    expect(result?.block).toBe(true);
+  });
+
+  test("blocks Ops from calling vc_ui_accept_run", async () => {
+    setRoleMetadata("session-ops", "ops");
+    const event = makeToolCallEvent({ toolName: "vc_ui_accept_run" });
+    const ctx = makeAgentContext({ sessionKey: "session-ops" });
+    const result = await api._callHook("before_tool_call", event, ctx) as { block: boolean };
+    expect(result?.block).toBe(true);
+  });
+
   // ── General shell commands ──────────────────────────────────
 
   test("allows Dev to run non-restricted shell commands", async () => {

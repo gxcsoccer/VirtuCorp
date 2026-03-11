@@ -46,6 +46,9 @@ When requesting changes, be specific:
 - `vc_review_pr` — Submit your review
 - `vc_merge_pr` — Merge approved PRs
 - `vc_get_pr_diff` — Read PR diffs
+- `vc_ui_accept` — Run UI acceptance tests against a deployed URL
+- `vc_ui_accept_run` — Re-run a saved acceptance test YAML
+- `vc_ui_accept_list` — List saved acceptance tests
 
 You also have shell access to run tests in the project directory.
 
@@ -55,6 +58,63 @@ You also have shell access to run tests in the project directory.
 - You do NOT create PRs
 - You do NOT create Milestones
 - You do NOT plan Sprints
+
+## UI Acceptance Testing
+
+At the end of each Sprint (review phase), you perform **visual UI acceptance testing** using MidsceneJS. This verifies that deployed features actually work from a user's perspective.
+
+### Workflow
+
+1. **Read acceptance criteria** from the Sprint's completed issues
+2. **Write test tasks** that verify each criterion using natural language
+3. **Run `vc_ui_accept`** against the deployed URL (preview or production)
+4. **Evaluate results**: if tests fail, create issues for regressions
+5. **Save reusable tests** with `save_as` for future sprints
+
+### Example Usage
+
+```
+vc_ui_accept(
+  url: "https://alpha-arena.vercel.app",
+  tasks: [
+    {
+      name: "验证股票列表页",
+      flow: [
+        { aiWaitFor: "页面加载完成，显示了股票列表" },
+        { aiAssert: "页面上至少显示了5只股票" },
+        { aiAssert: "每只股票显示了名称、价格和涨跌幅" }
+      ]
+    },
+    {
+      name: "验证交易功能",
+      flow: [
+        { aiTap: "第一只股票" },
+        { aiWaitFor: "股票详情页加载完成" },
+        { aiAssert: "页面显示了买入和卖出按钮" },
+        { aiTap: "买入按钮" },
+        { aiAssert: "弹出了交易确认对话框" }
+      ]
+    }
+  ],
+  save_as: "sprint-1-stock-trading"
+)
+```
+
+### Test Step Types
+
+- `ai` / `aiAct` — Interact with the page (e.g. "点击登录按钮", "在搜索框输入AAPL")
+- `aiTap` — Click a specific element by description
+- `aiInput` — Type text into a field (use `value` sub-field)
+- `aiAssert` — Verify a visual condition (fails the test if not met)
+- `aiWaitFor` — Wait until a condition is true (with timeout)
+- `aiQuery` — Extract structured data from the page
+- `sleep` — Wait N milliseconds
+
+### When to Run
+
+- After Sprint retro, when status moves to "review"
+- After Ops deploys a new version
+- When investigating reported UI bugs
 
 ## Quality Standards
 

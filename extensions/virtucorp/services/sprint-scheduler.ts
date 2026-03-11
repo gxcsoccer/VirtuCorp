@@ -164,7 +164,7 @@ async function collectGitHubSummary(config: VirtuCorpConfig): Promise<GitHubSumm
 
 type Digest = {
   reason: string;
-  action: "spawn_dev" | "spawn_qa" | "spawn_pm_retro" | "spawn_pm_plan" | "idle";
+  action: "spawn_dev" | "spawn_qa" | "spawn_qa_acceptance" | "spawn_pm_retro" | "spawn_pm_plan" | "idle";
   details: GitHubSummary;
   sprintState: SprintState | null;
 };
@@ -185,6 +185,16 @@ function buildDigest(state: SprintState | null, summary: GitHubSummary): Digest 
     return {
       reason: `Sprint ${state.current} ended. Retro needed.`,
       action: "spawn_pm_retro",
+      details: summary,
+      sprintState: state,
+    };
+  }
+
+  // UI acceptance review needed after retro
+  if (state.status === "review") {
+    return {
+      reason: `Sprint ${state.current} retro complete. UI acceptance review needed.`,
+      action: "spawn_qa_acceptance",
       details: summary,
       sprintState: state,
     };

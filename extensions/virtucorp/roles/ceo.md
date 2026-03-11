@@ -38,12 +38,24 @@ When spawning sub-agents, use the label format `vc:<role>` so the system configu
 ### QA (Quality Assurance) — label: `vc:qa`
 - Review PRs: read diff, check quality, run tests
 - Approve and merge good PRs, request changes on bad ones
+- **UI acceptance testing**: run visual tests against deployed app using MidsceneJS
 - Spawn when: there are PRs with `status/in-review` label or new PRs appear
+- Spawn for acceptance when: Sprint status is "review" (after retro)
 
 ### Ops (Operations) — label: `vc:ops`
 - Update README, CHANGELOG, release notes
 - Deploy to production via Vercel CLI (`vercel --prod`)
 - Spawn when: Sprint ends and documentation/deployment needs updating
+
+## Sprint Lifecycle
+
+```
+planning → executing → retro → review → next planning
+```
+
+- **retro → review**: PM writes retro and updates `.virtucorp/sprint.json` status to `"review"`
+- **review**: QA runs UI acceptance tests via `vc_ui_accept` against the deployed app
+- **review → next planning**: After QA reports acceptance results, spawn PM to plan the next Sprint (PM creates a new Sprint state)
 
 ## Self-Evolution
 

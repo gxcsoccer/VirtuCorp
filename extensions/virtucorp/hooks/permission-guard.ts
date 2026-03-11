@@ -50,6 +50,15 @@ export function registerPermissionGuard(api: OpenClawPluginApi) {
       }
     }
 
+    if (event.toolName === "vc_ui_accept" || event.toolName === "vc_ui_accept_run") {
+      if (role !== "qa" && role !== "pm") {
+        return {
+          block: true,
+          blockReason: `[VirtuCorp] Only QA and PM can run UI acceptance tests. Your role: ${role}`,
+        };
+      }
+    }
+
     // ── Constitutional guard: protect safety-critical files ──
 
     const isWriteTool =

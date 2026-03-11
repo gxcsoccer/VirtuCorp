@@ -40,9 +40,11 @@ npm run test:watch    # Watch mode
 
 ## Key Design Decisions
 
-- Only `vc_review_pr` and `vc_merge_pr` are registered as custom tools (permission gates)
+- Only `vc_review_pr`, `vc_merge_pr`, and `vc_ui_accept*` are registered as custom tools (permission gates)
 - All other GitHub operations use `gh` CLI directly
 - Knowledge base stored in `.virtucorp/knowledge/` (git-tracked)
+- UI acceptance tests stored in `.virtucorp/acceptance/` (YAML, git-tracked)
 - Sprint heartbeat auto-scales: 1-day sprint = 10min checks, 14-day = 60min
+- Sprint lifecycle: planning → executing → retro → review (UI acceptance) → next sprint
 - Deploy via Vercel CLI (only Ops role can deploy)
 - Constitutional guard: permission-guard.ts cannot be modified by any agent
