@@ -38,7 +38,7 @@ VirtuCorp agents depend on the following CLI tools at runtime:
 | Tool | Used by | Install |
 |------|---------|---------|
 | `gh` | All agents | `brew install gh` |
-| `opencode` | Dev agent | Build from [source](https://github.com/opencode-ai/opencode): `go build -o ~/bin/opencode .` (requires custom `LOCAL_MODELS` patch, see below) |
+| `opencode` | Dev agent | Build from [source](https://github.com/opencode-ai/opencode): `go build -o ~/.local/bin/opencode .` (requires custom `LOCAL_MODELS` patch, see below) |
 | `midscenejs` | QA agent | `npx @anthropic-ai/midscene` |
 | `vercel` | Ops agent | `npm i -g vercel` |
 | `rg` (ripgrep) | OpenCode dependency | `brew install ripgrep` |
@@ -50,7 +50,7 @@ The Dev agent uses [OpenCode](https://github.com/opencode-ai/opencode) for compl
 ```bash
 # Build from patched source
 cd /path/to/opencode
-go build -o ~/bin/opencode .
+go build -o ~/.local/bin/opencode .
 
 # Required env vars (auto-injected by context-loader for Dev sessions)
 LOCAL_ENDPOINT="https://coding.dashscope.aliyuncs.com/v1"
