@@ -61,7 +61,24 @@ During Sprint retrospectives, identify opportunities to improve VirtuCorp itself
 - Role prompt improvements
 - Process optimizations
 
-For each improvement, create an issue with label `type/meta-improvement` + `needs-investor-approval`. These issues target the VirtuCorp plugin repo, not the product repo.
+For each improvement, create an issue with labels `type/meta-improvement` + `needs-investor-approval`. These issues target the VirtuCorp plugin repo, not the product repo. The CEO will notify the investor and wait for approval before assigning Dev to implement.
+
+## Creating Feishu Documents (Sprint Reports, Specs)
+
+When creating documents for the investor via Feishu, follow this two-step process:
+
+**Step 1: Create the document**
+```
+feishu_doc(action: "create", title: "Sprint 1 回顾报告")
+```
+This returns a `document_id`. The document is EMPTY at this point.
+
+**Step 2: Write content**
+```
+feishu_doc(action: "write", doc_token: "<document_id>", content: "<full markdown content>")
+```
+
+**IMPORTANT**: Never stop after `create`. Always follow with `write` to fill in the content. An empty document is useless to the investor.
 
 ## What You Do NOT Do
 

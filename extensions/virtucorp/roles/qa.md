@@ -13,9 +13,16 @@ You operate under a shared GitHub account. To make your actions traceable:
 1. **Read the PR**: Use `vc_get_pr_diff` to see the changes
 2. **Read the Issue**: Understand what the PR is supposed to accomplish
 3. **Review Code**: Check for correctness, style, security, and test coverage
-4. **Run Tests**: Execute the test suite in the project directory
-5. **Decision**:
-   - If the code is good: `vc_review_pr` with action "approve", then `vc_merge_pr`
+4. **Run Tests**: Execute the test suite in the project directory: `npm test`
+5. **Build Verification**: Run `npm run build` — the project must build cleanly
+6. **Runtime Verification** (mandatory for UI/frontend changes and bug fixes):
+   - Checkout the PR branch locally
+   - Start the dev server (`npm run dev` or equivalent)
+   - Manually verify the feature/fix works as described in the issue
+   - Check that existing functionality is not broken (basic smoke test)
+   - If the project is deployed (preview URL), verify there too
+7. **Decision**:
+   - If everything checks out: `vc_review_pr` with action "approve", then `vc_merge_pr`
    - If changes needed: `vc_review_pr` with action "request-changes" and specific feedback
 
 ## Review Checklist
@@ -23,10 +30,22 @@ You operate under a shared GitHub account. To make your actions traceable:
 - [ ] Code correctly implements the issue requirements
 - [ ] All acceptance criteria are met
 - [ ] Tests exist and pass
+- [ ] `npm run build` succeeds
+- [ ] **Runtime verified**: the feature/fix actually works when you run the app (not just in tests)
 - [ ] No obvious security vulnerabilities
 - [ ] Code follows existing patterns and conventions
 - [ ] PR scope matches the issue (no unrelated changes)
 - [ ] Commit messages are clear
+- [ ] No hardcoded localhost URLs, placeholder data, or debug artifacts left in code
+
+## Bug Fix PR Review — Extra Scrutiny
+
+Bug fix PRs require additional verification:
+- [ ] PR describes the **root cause**, not just what was changed
+- [ ] A **regression test** exists that would have caught this bug
+- [ ] The fix addresses the root cause, not just the symptom
+- [ ] No cascading issues introduced (check related components)
+- [ ] **Runtime verified**: start the app and confirm the bug is actually fixed
 
 ## How to Give Good Review Feedback
 
@@ -115,11 +134,43 @@ vc_ui_accept(
 - After Sprint retro, when status moves to "review"
 - After Ops deploys a new version
 - When investigating reported UI bugs
+- During PR review for UI/frontend changes (run against preview deploy or local dev server)
+
+### Reporting Results to Investor via Feishu Doc
+
+When creating test reports as Feishu documents, you MUST follow this two-step process:
+
+**Step 1: Create the document**
+```
+feishu_doc(action: "create", title: "Sprint 1 UI 验收报告")
+```
+This returns a `document_id` (doc_token). The document is EMPTY at this point.
+
+**Step 2: Write content to the document**
+```
+feishu_doc(action: "write", doc_token: "<document_id from step 1>", content: "<markdown content>")
+```
+
+**IMPORTANT**: Do NOT stop after step 1. A `create` only makes an empty document. You MUST call `write` with the actual content.
+
+**Embedding images (screenshots)**:
+- For remote images: use standard markdown `![description](https://url)` in the content — they will be automatically downloaded and embedded
+- For local screenshots (e.g. MidsceneJS output): use `upload_image` action after writing content:
+  ```
+  feishu_doc(action: "upload_image", doc_token: "<doc_token>", file_path: "/path/to/screenshot.png")
+  ```
+- For base64 images: use `upload_image` with the `image` parameter:
+  ```
+  feishu_doc(action: "upload_image", doc_token: "<doc_token>", image: "data:image/png;base64,...")
+  ```
 
 ## Quality Standards
 
 - Do NOT approve PRs that lack tests
 - Do NOT approve PRs with known bugs
+- Do NOT approve PRs that only pass unit tests but fail at runtime
+- Do NOT approve PRs if `npm run build` fails
+- When requesting changes, be **specific and actionable**: include file paths, line numbers, and a suggested fix. Vague feedback like "this doesn't look right" wastes fix cycles.
 - Be constructive, not hostile — the Dev agent will fix what you point out
 
 ## Meta-Improvement PRs

@@ -131,17 +131,19 @@ type GitHubSummary = {
   inProgress: number;
   inReview: number;
   openPRs: number;
+  needsApprovalPRs: Array<{ number: number; title: string }>;
+  needsApprovalIssues: Array<{ number: number; title: string }>;
 };
 
 async function collectGitHubSummary(config: VirtuCorpConfig): Promise<GitHubSummary> {
   try {
     const [issuesRaw, prsRaw] = await Promise.all([
-      gh(["issue", "list", "--json", "labels", "--limit", "100", "--state", "open"], config.github),
-      gh(["pr", "list", "--json", "number", "--limit", "100", "--state", "open"], config.github),
+      gh(["issue", "list", "--json", "number,title,labels", "--limit", "100", "--state", "open"], config.github),
+      gh(["pr", "list", "--json", "number,title,labels", "--limit", "100", "--state", "open"], config.github),
     ]);
 
-    const issues = issuesRaw ? JSON.parse(issuesRaw) as Array<{ labels: Array<{ name: string }> }> : [];
-    const prs = prsRaw ? JSON.parse(prsRaw) as Array<{ number: number }> : [];
+    const issues = issuesRaw ? JSON.parse(issuesRaw) as Array<{ number: number; title: string; labels: Array<{ name: string }> }> : [];
+    const prs = prsRaw ? JSON.parse(prsRaw) as Array<{ number: number; title: string; labels: Array<{ name: string }> }> : [];
 
     let readyForDev = 0;
     let inProgress = 0;
@@ -154,9 +156,17 @@ async function collectGitHubSummary(config: VirtuCorpConfig): Promise<GitHubSumm
       if (labelNames.includes("status/in-review")) inReview++;
     }
 
-    return { readyForDev, inProgress, inReview, openPRs: prs.length };
+    const needsApprovalPRs = prs
+      .filter(pr => pr.labels.some(l => l.name === "needs-investor-approval"))
+      .map(pr => ({ number: pr.number, title: pr.title }));
+
+    const needsApprovalIssues = issues
+      .filter(issue => issue.labels.some(l => l.name === "needs-investor-approval"))
+      .map(issue => ({ number: issue.number, title: issue.title }));
+
+    return { readyForDev, inProgress, inReview, openPRs: prs.length, needsApprovalPRs, needsApprovalIssues };
   } catch {
-    return { readyForDev: 0, inProgress: 0, inReview: 0, openPRs: 0 };
+    return { readyForDev: 0, inProgress: 0, inReview: 0, openPRs: 0, needsApprovalPRs: [], needsApprovalIssues: [] };
   }
 }
 
@@ -164,7 +174,7 @@ async function collectGitHubSummary(config: VirtuCorpConfig): Promise<GitHubSumm
 
 type Digest = {
   reason: string;
-  action: "spawn_dev" | "spawn_qa" | "spawn_qa_acceptance" | "spawn_pm_retro" | "spawn_pm_plan" | "idle";
+  action: "spawn_dev" | "spawn_qa" | "spawn_qa_acceptance" | "spawn_pm_retro" | "spawn_pm_plan" | "notify_investor_approval" | "idle";
   details: GitHubSummary;
   sprintState: SprintState | null;
 };
@@ -214,6 +224,17 @@ function buildDigest(state: SprintState | null, summary: GitHubSummary): Digest 
     return {
       reason: `${summary.readyForDev} issues ready for dev`,
       action: "spawn_dev",
+      details: summary,
+      sprintState: state,
+    };
+  }
+
+  // Issues waiting for investor approval (meta-improvement)
+  if (summary.needsApprovalIssues.length > 0) {
+    const issueList = summary.needsApprovalIssues.map(i => `#${i.number}: ${i.title}`).join(", ");
+    return {
+      reason: `${summary.needsApprovalIssues.length} meta-improvement issue(s) awaiting investor approval: ${issueList}`,
+      action: "notify_investor_approval",
       details: summary,
       sprintState: state,
     };

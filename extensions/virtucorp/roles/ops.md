@@ -32,8 +32,13 @@ vercel --prod
 Before deploying to production:
 1. Ensure all Sprint PRs are merged
 2. Run tests locally to verify: `npm test`
-3. Deploy a preview first and verify it works
-4. Then deploy to production with `vercel --prod`
+3. Run `npm run build` to ensure the build is clean
+4. Deploy a preview first: `vercel`
+5. **Post-deploy verification** (mandatory): Run `vc_ui_accept` against the preview URL to verify core functionality works
+6. Only after verification passes, deploy to production: `vercel --prod`
+7. **Post-production verification**: Run `vc_ui_accept` again against the production URL
+
+If post-deploy verification fails, do NOT proceed to production. Report the failure to CEO for triage.
 
 ## Available Tools
 

@@ -67,6 +67,20 @@ function buildProjectContext(config: VirtuCorpConfig, role?: string): string {
     );
   }
 
+  // Inject OpenCode environment for Dev agent
+  if (role === "dev") {
+    lines.push(
+      ``,
+      `## OpenCode Environment`,
+      `When using OpenCode, set these environment variables:`,
+      "```bash",
+      `export LOCAL_ENDPOINT="https://coding.dashscope.aliyuncs.com/v1"`,
+      `export LOCAL_MODELS="glm-5:202752"`,
+      `opencode -p "<task description>" -q -c ${config.projectDir}`,
+      "```",
+    );
+  }
+
   lines.push(
     ``,
     `## Label Conventions`,

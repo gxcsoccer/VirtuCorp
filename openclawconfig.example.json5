@@ -153,7 +153,7 @@
           // CEO delegates to these specialized models
           roles: {
             pm:  { model: "bailian/qwen3.5-plus" },       // Strategic thinking
-            dev: { model: "bailian/qwen3-coder-plus" },    // Coding ability
+            dev: { model: "bailian/glm-5" },                // Coding ability
             qa:  { model: "bailian/qwen3.5-plus" },        // Review reasoning
             ops: { model: "bailian/kimi-k2.5" },           // Ops tasks
           },
