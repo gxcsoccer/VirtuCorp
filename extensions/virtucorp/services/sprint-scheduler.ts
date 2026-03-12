@@ -17,6 +17,38 @@ import { gh } from "../lib/github-client.js";
 import type { SprintState, VirtuCorpConfig } from "../lib/types.js";
 
 const SPRINT_STATE_FILE = ".virtucorp/sprint.json";
+const CEO_AGENT_ID = "virtucorp-ceo";
+const DISPATCH_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes
+
+// ── Dispatch throttle state (in-memory, resets on restart = immediate first dispatch) ──
+
+type DispatchRecord = {
+  digestHash: string;
+  timestamp: number;
+};
+
+let lastDispatch: DispatchRecord | null = null;
+
+export function computeDigestHash(digest: Digest): string {
+  const parts = [
+    digest.action,
+    ...digest.details.p0Bugs.map(b => `bug:${b.number}`),
+    `prs:${digest.details.openPRs}`,
+    `ready:${digest.details.readyForDev}`,
+    ...digest.details.needsApprovalIssues.map(i => `approval:${i.number}`),
+    digest.sprintState?.status ?? "no-sprint",
+  ];
+  return parts.join("|");
+}
+
+export function shouldDispatchToCEO(digest: Digest, last: DispatchRecord | null, now = Date.now()): boolean {
+  if (!last) return true;
+  const hash = computeDigestHash(digest);
+  // State changed (new bugs, different action, etc.) → dispatch immediately
+  if (hash !== last.digestHash) return true;
+  // Same state → respect cooldown
+  return now - last.timestamp > DISPATCH_COOLDOWN_MS;
+}
 
 export function registerSprintScheduler(api: OpenClawPluginApi, config: VirtuCorpConfig) {
   let timer: ReturnType<typeof setInterval> | null = null;
@@ -79,11 +111,32 @@ async function tick(
 
   // Build a status digest for the CEO to act on
   const digest = buildDigest(state, summary);
-  if (digest) {
-    logger.info(`VirtuCorp scheduler: ${digest.reason}`);
-    // The digest is sent to the CEO via runtime messaging
-    // For now, we log it — actual delivery depends on the gateway session wiring
-    // which will be connected when we integrate with the CEO agent's session
+  if (!digest) return;
+
+  logger.info(`VirtuCorp scheduler: ${digest.reason}`);
+
+  // Dispatch to CEO agent if state warrants it and we haven't recently dispatched the same thing
+  if (shouldDispatchToCEO(digest, lastDispatch)) {
+    try {
+      // Enqueue event text so it's prepended to CEO's next prompt
+      api.runtime.system.enqueueSystemEvent(
+        `[VirtuCorp Scheduler] ${digest.reason}`,
+        { sessionKey: `agent:${CEO_AGENT_ID}:main` },
+      );
+      // Wake the CEO agent to process the event
+      api.runtime.system.requestHeartbeatNow({
+        reason: `virtucorp-scheduler: ${digest.action}`,
+        agentId: CEO_AGENT_ID,
+      });
+
+      lastDispatch = {
+        digestHash: computeDigestHash(digest),
+        timestamp: Date.now(),
+      };
+      logger.info(`VirtuCorp scheduler: dispatched to CEO (action=${digest.action})`);
+    } catch (err) {
+      logger.warn(`VirtuCorp scheduler: failed to dispatch to CEO: ${err}`);
+    }
   }
 }
 
@@ -126,11 +179,12 @@ export function isSprintExpired(state: SprintState): boolean {
 
 // ── GitHub State Collector ──────────────────────────────────
 
-type GitHubSummary = {
+export type GitHubSummary = {
   readyForDev: number;
   inProgress: number;
   inReview: number;
   openPRs: number;
+  p0Bugs: Array<{ number: number; title: string }>;
   needsApprovalPRs: Array<{ number: number; title: string }>;
   needsApprovalIssues: Array<{ number: number; title: string }>;
 };
@@ -149,11 +203,17 @@ async function collectGitHubSummary(config: VirtuCorpConfig): Promise<GitHubSumm
     let inProgress = 0;
     let inReview = 0;
 
+    const p0Bugs: Array<{ number: number; title: string }> = [];
+
     for (const issue of issues) {
       const labelNames = issue.labels.map(l => l.name);
       if (labelNames.includes("status/ready-for-dev")) readyForDev++;
       if (labelNames.includes("status/in-progress")) inProgress++;
       if (labelNames.includes("status/in-review")) inReview++;
+      // Track P0 bugs separately — these need urgent attention
+      if (labelNames.includes("priority/p0") && labelNames.includes("type/bug")) {
+        p0Bugs.push({ number: issue.number, title: issue.title });
+      }
     }
 
     const needsApprovalPRs = prs
@@ -164,9 +224,9 @@ async function collectGitHubSummary(config: VirtuCorpConfig): Promise<GitHubSumm
       .filter(issue => issue.labels.some(l => l.name === "needs-investor-approval"))
       .map(issue => ({ number: issue.number, title: issue.title }));
 
-    return { readyForDev, inProgress, inReview, openPRs: prs.length, needsApprovalPRs, needsApprovalIssues };
+    return { readyForDev, inProgress, inReview, openPRs: prs.length, p0Bugs, needsApprovalPRs, needsApprovalIssues };
   } catch {
-    return { readyForDev: 0, inProgress: 0, inReview: 0, openPRs: 0, needsApprovalPRs: [], needsApprovalIssues: [] };
+    return { readyForDev: 0, inProgress: 0, inReview: 0, openPRs: 0, p0Bugs: [], needsApprovalPRs: [], needsApprovalIssues: [] };
   }
 }
 
@@ -174,12 +234,12 @@ async function collectGitHubSummary(config: VirtuCorpConfig): Promise<GitHubSumm
 
 type Digest = {
   reason: string;
-  action: "spawn_dev" | "spawn_qa" | "spawn_qa_acceptance" | "spawn_pm_retro" | "spawn_pm_plan" | "notify_investor_approval" | "idle";
+  action: "spawn_dev" | "spawn_dev_bugfix" | "spawn_qa" | "spawn_qa_acceptance" | "spawn_pm_retro" | "spawn_pm_plan" | "notify_investor_approval" | "idle";
   details: GitHubSummary;
   sprintState: SprintState | null;
 };
 
-function buildDigest(state: SprintState | null, summary: GitHubSummary): Digest | null {
+export function buildDigest(state: SprintState | null, summary: GitHubSummary): Digest | null {
   // No sprint yet — needs initialization
   if (!state) {
     return {
@@ -205,6 +265,37 @@ function buildDigest(state: SprintState | null, summary: GitHubSummary): Digest 
     return {
       reason: `Sprint ${state.current} retro complete. UI acceptance review needed.`,
       action: "spawn_qa_acceptance",
+      details: summary,
+      sprintState: state,
+    };
+  }
+
+  // Sprint completed — transition to next Sprint planning
+  // But if there are still P0 bugs, fix them first before planning next Sprint
+  if (state.status === "completed") {
+    if (summary.p0Bugs.length > 0) {
+      const bugList = summary.p0Bugs.map(b => `#${b.number}: ${b.title}`).join(", ");
+      return {
+        reason: `🚨 Sprint ${state.current} completed but ${summary.p0Bugs.length} P0 bug(s) still open: ${bugList}. Fix before planning next Sprint.`,
+        action: "spawn_dev_bugfix",
+        details: summary,
+        sprintState: state,
+      };
+    }
+    return {
+      reason: `Sprint ${state.current} completed. Ready to plan Sprint ${state.current + 1}.`,
+      action: "spawn_pm_plan",
+      details: summary,
+      sprintState: state,
+    };
+  }
+
+  // ── P0 bugs take absolute priority over everything else during execution ──
+  if (summary.p0Bugs.length > 0) {
+    const bugList = summary.p0Bugs.map(b => `#${b.number}: ${b.title}`).join(", ");
+    return {
+      reason: `🚨 ${summary.p0Bugs.length} P0 bug(s) need urgent fix: ${bugList}`,
+      action: "spawn_dev_bugfix",
       details: summary,
       sprintState: state,
     };

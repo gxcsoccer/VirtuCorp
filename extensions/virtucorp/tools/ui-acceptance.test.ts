@@ -34,7 +34,7 @@ describe("ui-acceptance tools", () => {
 
     // The tool will try to run midscene which isn't installed, so it will fail.
     // But we can verify the YAML file was created and persisted (save_as keeps it).
-    const result = await tool.handler({
+    const result = await tool.execute("test",{
       url: "https://example.com",
       tasks: [
         {
@@ -62,7 +62,7 @@ describe("ui-acceptance tools", () => {
   test("cleans up temp file when save_as is not provided", async () => {
     const tool = api._getTool("vc_ui_accept")!;
 
-    await tool.handler({
+    await tool.execute("test",{
       url: "https://example.com",
       tasks: [{ name: "Test", flow: [{ aiAssert: "works" }] }],
     });
@@ -76,7 +76,7 @@ describe("ui-acceptance tools", () => {
   test("quotes URL in generated YAML", async () => {
     const tool = api._getTool("vc_ui_accept")!;
 
-    await tool.handler({
+    await tool.execute("test",{
       url: "https://example.com/page#section",
       tasks: [{ name: "Test", flow: [{ aiAssert: "ok" }] }],
       save_as: "url-test",
@@ -97,7 +97,7 @@ describe("ui-acceptance tools", () => {
     await fs.writeFile(path.join(dir, "test-b.yaml"), "web:\n  url: https://b.com\n");
 
     const tool = api._getTool("vc_ui_accept_list")!;
-    const result = await tool.handler({});
+    const result = await tool.execute("test",{});
     expect(result).toContain("2 acceptance test(s)");
     expect(result).toContain("test-a.yaml");
     expect(result).toContain("test-b.yaml");
@@ -110,7 +110,7 @@ describe("ui-acceptance tools", () => {
     await fs.writeFile(path.join(dir, "_tmp_real-test.yaml"), "web:\n  url: https://a.com\n");
 
     const tool = api._getTool("vc_ui_accept_list")!;
-    const result = await tool.handler({});
+    const result = await tool.execute("test",{});
     expect(result).toContain("1 acceptance test(s)");
     expect(result).toContain("real-test.yaml");
     expect(result).not.toContain("_tmp_");
@@ -118,7 +118,7 @@ describe("ui-acceptance tools", () => {
 
   test("returns empty message when no tests exist", async () => {
     const tool = api._getTool("vc_ui_accept_list")!;
-    const result = await tool.handler({});
+    const result = await tool.execute("test",{});
     expect(result).toContain("No saved acceptance tests");
   });
 
@@ -126,7 +126,7 @@ describe("ui-acceptance tools", () => {
 
   test("fails gracefully when YAML file not found", async () => {
     const tool = api._getTool("vc_ui_accept_run")!;
-    const result = await tool.handler({ file: "nonexistent.yaml" });
+    const result = await tool.execute("test",{ file: "nonexistent.yaml" });
     expect(result).toContain("Failed to run nonexistent.yaml");
   });
 
@@ -135,7 +135,7 @@ describe("ui-acceptance tools", () => {
   test("escapes special characters in YAML", async () => {
     const tool = api._getTool("vc_ui_accept")!;
 
-    await tool.handler({
+    await tool.execute("test",{
       url: "https://example.com",
       tasks: [
         {
@@ -155,7 +155,7 @@ describe("ui-acceptance tools", () => {
   test("slugify supports non-ASCII characters", async () => {
     const tool = api._getTool("vc_ui_accept")!;
 
-    await tool.handler({
+    await tool.execute("test",{
       url: "https://example.com",
       tasks: [{ name: "Test", flow: [{ aiAssert: "ok" }] }],
       save_as: "首页测试",

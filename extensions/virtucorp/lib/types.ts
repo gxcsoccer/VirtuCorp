@@ -42,7 +42,7 @@ export type SprintState = {
   startDate: string;
   endDate: string;
   milestone: number | null;
-  status: "planning" | "executing" | "retro" | "review";
+  status: "planning" | "executing" | "retro" | "review" | "completed";
 };
 
 /**

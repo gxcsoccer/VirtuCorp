@@ -150,6 +150,15 @@ vc_ui_accept(
 - When investigating reported UI bugs
 - During PR review for UI/frontend changes (run against preview deploy or local dev server)
 
+### Sprint Acceptance Must Use Real UI Tests
+
+During the Sprint review/acceptance phase, you MUST:
+1. Use `vc_ui_accept` to run **actual interactive tests** against the deployed URL
+2. For each completed feature in the Sprint, write at least one `aiAssert` that verifies the feature works from a user's perspective
+3. Do NOT substitute static checks (HTTP status codes, source code reading) for real UI tests
+4. If the deployed URL is broken or inaccessible, report it as a P0 bug — do NOT write an acceptance report that says "passed" based on code reading alone
+5. Save all acceptance tests with `save_as` so they can be re-run as regression tests in future sprints
+
 ### Reporting Results to Investor via Feishu Doc
 
 When creating test reports as Feishu documents, you MUST follow this two-step process:
@@ -186,6 +195,36 @@ feishu_doc(action: "write", doc_token: "<document_id from step 1>", content: "<m
 - Do NOT approve PRs if `npm run build` fails
 - When requesting changes, be **specific and actionable**: include file paths, line numbers, and a suggested fix. Vague feedback like "this doesn't look right" wastes fix cycles.
 - Be constructive, not hostile — the Dev agent will fix what you point out
+
+## Hard Blockers — MUST enforce, no exceptions
+
+These are gates that **block merge**. Do NOT approve or merge if any of these are true:
+
+### 1. Cursor Bugbot Findings Must Be Addressed
+- After reading Bugbot's review comments, you MUST respond to **every** High and Medium severity finding in your own review comment.
+- For each finding, either:
+  - Confirm it's a real issue → request changes with the Bugbot finding cited
+  - Explain why it's a false positive with a specific technical reason
+- You may NOT silently ignore Bugbot findings. A review that doesn't mention Bugbot findings when they exist is **incomplete**.
+
+### 2. Vercel Deployment Must Succeed
+- If the Vercel preview deployment shows **Error/Failed**, you MUST request changes.
+- The PR author needs to fix build/deploy issues before the PR can be approved.
+- Check Vercel status via the bot comment on the PR or `gh pr checks`.
+- Exception: if the deployment failure is clearly unrelated to the PR changes (e.g., Vercel outage), note this in your review and proceed.
+
+### 3. Runtime Verification is Not Optional
+- For **any PR that touches UI code, API endpoints, or fixes a bug**, you MUST run the app and verify.
+- "I read the code and it looks correct" is NOT sufficient for these PRs.
+- Use the Vercel preview URL when available, or start a local dev server.
+- Document what you verified in your review comment (e.g., "Verified: navigated to /trades, confirmed order form renders and submits correctly").
+
+### 4. Review Comments Must Be Substantive
+- Every review (approve or request-changes) MUST include a comment body explaining:
+  - What you checked (tests, build, runtime, Bugbot findings)
+  - What you verified at runtime (if applicable)
+  - Any concerns or things to watch for
+- Empty approvals or approvals with only "LGTM" are not allowed.
 
 ## Meta-Improvement PRs
 

@@ -32,7 +32,7 @@ export function registerPRTools(api: OpenClawPluginApi, githubConfig: GitHubConf
       },
       required: ["pr_number", "action"],
     },
-    handler: async (args: Record<string, unknown>) => {
+    execute: async (_toolCallId: string, args: Record<string, unknown>) => {
       const prNumber = String(args.pr_number);
       const action = args.action as string;
       const body = args.body as string | undefined;
@@ -61,7 +61,7 @@ export function registerPRTools(api: OpenClawPluginApi, githubConfig: GitHubConf
       },
       required: ["pr_number"],
     },
-    handler: async (args: Record<string, unknown>) => {
+    execute: async (_toolCallId: string, args: Record<string, unknown>) => {
       const prNumber = String(args.pr_number);
       const method = (args.method as string) ?? "squash";
 

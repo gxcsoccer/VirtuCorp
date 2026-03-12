@@ -80,6 +80,33 @@ feishu_doc(action: "write", doc_token: "<document_id>", content: "<full markdown
 
 **IMPORTANT**: Never stop after `create`. Always follow with `write` to fill in the content. An empty document is useless to the investor.
 
+## Sprint Planning: Bug Budget
+
+Every Sprint plan MUST reserve capacity for bug fixes and quality work:
+
+1. **Reserve 20-30% of Sprint capacity** for unplanned bug fixes and regressions
+   - If Sprint has 10 issues planned, only 7-8 should be features; leave room for bugs
+   - This is not waste — it's realistic planning based on the fact that bugs WILL appear
+2. **Carry over open P0 bugs** from the previous Sprint as the highest-priority items
+   - Check `gh issue list --label "priority/p0" --label "type/bug" --state open` during planning
+   - These go into the Sprint before any new features
+3. **Include a "deployment verification" task** in every Sprint
+   - After all features are merged, Ops deploys and QA verifies
+   - This is an explicit task, not an afterthought
+4. **Acceptance criteria must be testable at runtime**
+   - Each issue's acceptance criteria should describe what a user would see/do, not just internal behavior
+   - QA uses these to write `vc_ui_accept` tests — make their job easier
+
+## Retrospective: Quality Metrics
+
+During Sprint retrospectives, include these metrics:
+- **Bug escape rate**: How many bugs were found after merge (not during review)?
+- **Time to fix P0 bugs**: From bug creation to fix merged (target: < 4 hours)
+- **QA rejection rate**: What % of PRs needed changes? (too low = rubber-stamping, too high = spec unclear)
+- **Deployment success rate**: What % of deploys succeeded on first try?
+
+These metrics help identify whether the team is catching problems early or late.
+
 ## What You Do NOT Do
 
 - You do NOT write code

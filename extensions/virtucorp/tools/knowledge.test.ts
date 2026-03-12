@@ -32,7 +32,7 @@ describe("knowledge tools", () => {
 
   test("saves knowledge to the correct path", async () => {
     const tool = api._getTool("vc_save_knowledge")!;
-    const result = await tool.handler({
+    const result = await tool.execute("test",{
       category: "decisions",
       title: "Use TypeScript",
       content: "We chose TypeScript for type safety.",
@@ -49,7 +49,7 @@ describe("knowledge tools", () => {
 
   test("slugifies title correctly", async () => {
     const tool = api._getTool("vc_save_knowledge")!;
-    await tool.handler({
+    await tool.execute("test",{
       category: "patterns",
       title: "Error Handling Best Practices!!!",
       content: "Always catch errors.",
@@ -65,12 +65,12 @@ describe("knowledge tools", () => {
 
   test("overwrites existing knowledge file", async () => {
     const tool = api._getTool("vc_save_knowledge")!;
-    await tool.handler({
+    await tool.execute("test",{
       category: "decisions",
       title: "Database Choice",
       content: "Use SQLite.",
     });
-    await tool.handler({
+    await tool.execute("test",{
       category: "decisions",
       title: "Database Choice",
       content: "Changed to PostgreSQL.",
@@ -86,44 +86,44 @@ describe("knowledge tools", () => {
 
   test("finds knowledge by keyword", async () => {
     const saveTool = api._getTool("vc_save_knowledge")!;
-    await saveTool.handler({
+    await saveTool.execute("test",{
       category: "patterns",
       title: "Retry Logic",
       content: "Use exponential backoff for API calls.",
     });
-    await saveTool.handler({
+    await saveTool.execute("test",{
       category: "decisions",
       title: "API Design",
       content: "Use REST with JSON.",
     });
 
     const searchTool = api._getTool("vc_search_knowledge")!;
-    const result = await searchTool.handler({ query: "exponential backoff" });
+    const result = await searchTool.execute("test",{ query: "exponential backoff" });
     expect(result).toContain("retry-logic.md");
     expect(result).toContain("exponential backoff");
   });
 
   test("returns message when no matches found", async () => {
     const tool = api._getTool("vc_search_knowledge")!;
-    const result = await tool.handler({ query: "nonexistent topic xyz123" });
+    const result = await tool.execute("test",{ query: "nonexistent topic xyz123" });
     expect(result).toContain("No knowledge found");
   });
 
   test("searches within specific category", async () => {
     const saveTool = api._getTool("vc_save_knowledge")!;
-    await saveTool.handler({
+    await saveTool.execute("test",{
       category: "patterns",
       title: "Test Pattern",
       content: "Always use fixtures.",
     });
-    await saveTool.handler({
+    await saveTool.execute("test",{
       category: "decisions",
       title: "Test Decision",
       content: "Always use fixtures.",
     });
 
     const searchTool = api._getTool("vc_search_knowledge")!;
-    const result = await searchTool.handler({ query: "fixtures", category: "patterns" });
+    const result = await searchTool.execute("test",{ query: "fixtures", category: "patterns" });
     expect(result).toContain("patterns");
     expect(result).not.toContain("decisions");
   });
@@ -132,19 +132,19 @@ describe("knowledge tools", () => {
 
   test("lists knowledge entries", async () => {
     const saveTool = api._getTool("vc_save_knowledge")!;
-    await saveTool.handler({
+    await saveTool.execute("test",{
       category: "decisions",
       title: "Use Vitest",
       content: "Fast test runner.",
     });
-    await saveTool.handler({
+    await saveTool.execute("test",{
       category: "runbook",
       title: "Deploy Steps",
       content: "Step 1: build.",
     });
 
     const listTool = api._getTool("vc_list_knowledge")!;
-    const result = await listTool.handler({});
+    const result = await listTool.execute("test",{});
     expect(result).toContain("decisions/");
     expect(result).toContain("use-vitest.md");
     expect(result).toContain("runbook/");
@@ -153,18 +153,18 @@ describe("knowledge tools", () => {
 
   test("lists knowledge filtered by category", async () => {
     const saveTool = api._getTool("vc_save_knowledge")!;
-    await saveTool.handler({ category: "decisions", title: "A", content: "a" });
-    await saveTool.handler({ category: "patterns", title: "B", content: "b" });
+    await saveTool.execute("test",{ category: "decisions", title: "A", content: "a" });
+    await saveTool.execute("test",{ category: "patterns", title: "B", content: "b" });
 
     const listTool = api._getTool("vc_list_knowledge")!;
-    const result = await listTool.handler({ category: "decisions" });
+    const result = await listTool.execute("test",{ category: "decisions" });
     expect(result).toContain("decisions/");
     expect(result).not.toContain("patterns/");
   });
 
   test("returns empty message when no knowledge exists", async () => {
     const listTool = api._getTool("vc_list_knowledge")!;
-    const result = await listTool.handler({});
+    const result = await listTool.execute("test",{});
     expect(result).toContain("Knowledge base is empty");
   });
 });

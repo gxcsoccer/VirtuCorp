@@ -59,7 +59,7 @@ export function registerKnowledgeTools(api: OpenClawPluginApi, projectDir: strin
       },
       required: ["category", "title", "content"],
     },
-    handler: async (args: Record<string, unknown>) => {
+    execute: async (_toolCallId: string, args: Record<string, unknown>) => {
       const category = args.category as KnowledgeCategory;
       const title = args.title as string;
       const content = args.content as string;
@@ -104,7 +104,7 @@ export function registerKnowledgeTools(api: OpenClawPluginApi, projectDir: strin
       },
       required: ["query"],
     },
-    handler: async (args: Record<string, unknown>) => {
+    execute: async (_toolCallId: string, args: Record<string, unknown>) => {
       const query = args.query as string;
       const category = (args.category as string) ?? "all";
 
@@ -157,7 +157,7 @@ export function registerKnowledgeTools(api: OpenClawPluginApi, projectDir: strin
         },
       },
     },
-    handler: async (args: Record<string, unknown>) => {
+    execute: async (_toolCallId: string, args: Record<string, unknown>) => {
       const category = (args.category as string) ?? "all";
       const results: string[] = [];
 

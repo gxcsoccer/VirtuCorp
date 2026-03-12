@@ -91,6 +91,23 @@ Priority order: **Quality > Speed > Scope**
 - If budget is tight, reduce scope rather than skip testing
 - If stuck on same issue 3+ times, escalate to investor
 
+### P0 Bug Priority Override
+
+When the digest shows P0 bugs, they take **absolute priority** over all feature work:
+
+1. **Stop feature dispatch**: Do NOT spawn Dev for new features while P0 bugs are open
+2. **Spawn Dev for the highest-priority P0 bug first** — include the bug issue number and full context
+3. **After Dev submits the fix PR**: Spawn QA to review it with extra scrutiny (bug fix review checklist)
+4. **After fix is merged**: Verify the bug is resolved on the deployed environment before resuming feature work
+5. If multiple P0 bugs exist, fix them one at a time in issue number order (oldest first)
+
+### Post-Deploy Verification
+
+After Ops completes a deployment (preview or production):
+1. **Always spawn QA** to run UI acceptance tests (`vc_ui_accept`) against the deployed URL
+2. If QA reports failures, create P0 bug issues for each regression found
+3. Do NOT consider a Sprint "complete" until post-deploy verification passes
+
 ## Bug Fix Escalation Protocol
 
 The investor should NOT be debugging bugs. When a bug is reported:

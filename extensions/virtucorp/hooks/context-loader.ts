@@ -123,8 +123,26 @@ export async function buildCEODigest(config: VirtuCorpConfig): Promise<string> {
     lines.push(`- PRs awaiting review: ${summary.prsAwaitingReview}`);
     lines.push(`- PRs approved (ready to merge): ${summary.prsApproved}`);
     lines.push(`- Total open issues: ${summary.totalOpen}`);
+    if (summary.p0Bugs.length > 0) {
+      lines.push(`- 🚨 **P0 Bugs**: ${summary.p0Bugs.length}`);
+      for (const bug of summary.p0Bugs) {
+        lines.push(`  - #${bug.number}: ${bug.title}`);
+      }
+    }
 
-    if (summary.readyForDev > 0) {
+    if (summary.failedDeployPRs.length > 0) {
+      lines.push(`- 🔴 **Deploy failures**: ${summary.failedDeployPRs.length}`);
+      for (const pr of summary.failedDeployPRs) {
+        lines.push(`  - PR #${pr.number}: ${pr.title}`);
+      }
+    }
+
+    // P0 bugs take highest priority — must be fixed before any new feature work
+    if (summary.p0Bugs.length > 0) {
+      lines.push(`\n🚨 **URGENT**: ${summary.p0Bugs.length} P0 bug(s) open. Spawn Dev to fix these BEFORE any feature work.`);
+    } else if (summary.failedDeployPRs.length > 0) {
+      lines.push(`\n🔴 **Deploy broken**: ${summary.failedDeployPRs.length} PR(s) have failed Vercel deployments. Spawn Dev or Ops to investigate.`);
+    } else if (summary.readyForDev > 0) {
       lines.push(`\n**Action needed**: Spawn Dev to work on ready issues.`);
     }
     if (summary.prsAwaitingReview > 0) {
@@ -156,36 +174,53 @@ type GitHubState = {
   prsAwaitingReview: number;
   prsApproved: number;
   totalOpen: number;
+  p0Bugs: Array<{ number: number; title: string }>;
+  failedDeployPRs: Array<{ number: number; title: string }>;
 };
 
 async function collectGitHubState(config: VirtuCorpConfig): Promise<GitHubState> {
   const [issuesRaw, prsRaw] = await Promise.all([
     gh(
-      ["issue", "list", "--json", "number,labels", "--limit", "100", "--state", "open"],
+      ["issue", "list", "--json", "number,title,labels", "--limit", "100", "--state", "open"],
       config.github,
     ).catch(() => "[]"),
     gh(
-      ["pr", "list", "--json", "number,reviewDecision", "--limit", "100", "--state", "open"],
+      ["pr", "list", "--json", "number,title,reviewDecision,statusCheckRollup", "--limit", "100", "--state", "open"],
       config.github,
     ).catch(() => "[]"),
   ]);
 
-  const issues = JSON.parse(issuesRaw || "[]") as Array<{ labels: Array<{ name: string }> }>;
-  const prs = JSON.parse(prsRaw || "[]") as Array<{ reviewDecision: string }>;
+  const issues = JSON.parse(issuesRaw || "[]") as Array<{ number: number; title: string; labels: Array<{ name: string }> }>;
+  const prs = JSON.parse(prsRaw || "[]") as Array<{ number: number; title: string; reviewDecision: string; statusCheckRollup?: Array<{ conclusion: string; name: string }> }>;
 
   let readyForDev = 0;
   let inProgress = 0;
+  const p0Bugs: Array<{ number: number; title: string }> = [];
+
   for (const issue of issues) {
     const names = issue.labels.map(l => l.name);
     if (names.includes("status/ready-for-dev")) readyForDev++;
     if (names.includes("status/in-progress")) inProgress++;
+    if (names.includes("priority/p0") && names.includes("type/bug")) {
+      p0Bugs.push({ number: issue.number, title: issue.title });
+    }
   }
 
   let prsAwaitingReview = 0;
   let prsApproved = 0;
+  const failedDeployPRs: Array<{ number: number; title: string }> = [];
+
   for (const pr of prs) {
     if (pr.reviewDecision === "APPROVED") prsApproved++;
     else prsAwaitingReview++;
+    // Detect Vercel deployment failures
+    const checks = pr.statusCheckRollup ?? [];
+    const hasDeployFailure = checks.some(
+      c => c.name.toLowerCase().includes("vercel") && c.conclusion === "FAILURE",
+    );
+    if (hasDeployFailure) {
+      failedDeployPRs.push({ number: pr.number, title: pr.title });
+    }
   }
 
   return {
@@ -194,6 +229,8 @@ async function collectGitHubState(config: VirtuCorpConfig): Promise<GitHubState>
     prsAwaitingReview,
     prsApproved,
     totalOpen: issues.length,
+    p0Bugs,
+    failedDeployPRs,
   };
 }
 

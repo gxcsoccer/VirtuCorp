@@ -67,7 +67,7 @@ export function registerUIAcceptanceTools(api: OpenClawPluginApi, projectDir: st
       },
       required: ["url", "tasks"],
     },
-    handler: async (args: Record<string, unknown>) => {
+    execute: async (_toolCallId: string, args: Record<string, unknown>) => {
       const url = args.url as string;
       const tasks = args.tasks as Array<{ name: string; flow: Array<Record<string, unknown>> }>;
       const saveAs = args.save_as as string | undefined;
@@ -121,7 +121,7 @@ export function registerUIAcceptanceTools(api: OpenClawPluginApi, projectDir: st
       },
       required: ["file"],
     },
-    handler: async (args: Record<string, unknown>) => {
+    execute: async (_toolCallId: string, args: Record<string, unknown>) => {
       const file = args.file as string;
       const urlOverride = args.url_override as string | undefined;
       const yamlPath = join(projectDir, ACCEPTANCE_DIR, file);
@@ -161,7 +161,7 @@ export function registerUIAcceptanceTools(api: OpenClawPluginApi, projectDir: st
       type: "object" as const,
       properties: {},
     },
-    handler: async () => {
+    execute: async (_toolCallId: string, _args: Record<string, unknown>) => {
       const acceptDir = join(projectDir, ACCEPTANCE_DIR);
       try {
         const entries = await readdir(acceptDir);

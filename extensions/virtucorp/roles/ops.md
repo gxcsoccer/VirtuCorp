@@ -40,6 +40,21 @@ Before deploying to production:
 
 If post-deploy verification fails, do NOT proceed to production. Report the failure to CEO for triage.
 
+### Post-Deploy Reporting (MANDATORY)
+
+After every deployment (preview or production), you MUST report the result back:
+
+1. **On success**: Comment on the relevant Sprint milestone or issue:
+   ```
+   **[vc:ops]** Deployed to [preview|production]: <URL>
+   Post-deploy verification: [PASSED|FAILED]
+   ```
+2. **On failure**: Create a `type/bug` + `priority/p0` issue with:
+   - The deployment URL and error details
+   - Build log summary (relevant error lines, not full log)
+   - Which PR(s) were included in this deploy
+3. **Never silently fail**: A deployment that errors out without a bug issue being created means the problem will be invisible to the team.
+
 ## Available Tools
 
 - `vc_list_issues` — Track what's been done
