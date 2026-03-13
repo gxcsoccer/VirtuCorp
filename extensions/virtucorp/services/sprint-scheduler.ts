@@ -14,11 +14,13 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core";
 import { gh } from "../lib/github-client.js";
+import { getActiveSessions, getStaleSessions, clearRoleMetadata } from "../lib/role-metadata.js";
 import type { SprintState, VirtuCorpConfig } from "../lib/types.js";
 
 const SPRINT_STATE_FILE = ".virtucorp/sprint.json";
 const CEO_AGENT_ID = "virtucorp-ceo";
 const DISPATCH_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes
+const STALE_SESSION_MAX_MINUTES = 60; // Sessions older than 60 min are likely stale
 
 // ── Dispatch throttle state (in-memory, resets on restart = immediate first dispatch) ──
 
@@ -97,6 +99,17 @@ async function tick(
   config: VirtuCorpConfig,
   logger: { info: (msg: string) => void; warn: (msg: string) => void },
 ) {
+  // ── Clean up stale sessions that block new spawns ──
+  // We can only clear our in-memory metadata here (background service can't call subagent APIs).
+  // The CEO prompt instructs it to `sessions_delete` the actual OpenClaw session if spawn fails.
+  const staleSessions = getStaleSessions(STALE_SESSION_MAX_MINUTES);
+  for (const stale of staleSessions) {
+    logger.warn(
+      `VirtuCorp scheduler: clearing stale ${stale.role} metadata (${stale.ageMinutes}min old): ${stale.sessionKey}`,
+    );
+    clearRoleMetadata(stale.sessionKey);
+  }
+
   const state = await loadSprintState(config.projectDir);
   const summary = await collectGitHubSummary(config);
 
@@ -117,10 +130,31 @@ async function tick(
 
   // Dispatch to CEO agent if state warrants it and we haven't recently dispatched the same thing
   if (shouldDispatchToCEO(digest, lastDispatch)) {
+    // Build session status info so CEO knows which roles are busy or stale
+    const activeSessions = getActiveSessions();
+    const sessionLines: string[] = [];
+    for (const [role, info] of activeSessions) {
+      sessionLines.push(`  - vc:${role}: active for ${info.ageMinutes}min`);
+    }
+
+    const staleLines: string[] = [];
+    for (const stale of staleSessions) {
+      staleLines.push(`  - vc:${stale.role} (${stale.ageMinutes}min old) — run \`sessions_delete\` on this before spawning`);
+    }
+
+    let sessionInfo: string;
+    if (staleLines.length > 0) {
+      sessionInfo = `\n\n⚠️ Stale sessions detected (cleaned from scheduler, but you MUST delete them in OpenClaw before spawning):\n${staleLines.join("\n")}`;
+    } else if (sessionLines.length > 0) {
+      sessionInfo = `\n\nActive sub-agent sessions:\n${sessionLines.join("\n")}`;
+    } else {
+      sessionInfo = "\n\nNo active sub-agent sessions (all roles available to spawn).";
+    }
+
     try {
       // Enqueue event text so it's prepended to CEO's next prompt
       api.runtime.system.enqueueSystemEvent(
-        `[VirtuCorp Scheduler] ${digest.reason}`,
+        `[VirtuCorp Scheduler] ${digest.reason}${sessionInfo}`,
         { sessionKey: `agent:${CEO_AGENT_ID}:main` },
       );
       // Wake the CEO agent to process the event

@@ -154,6 +154,24 @@ Always include in the task description:
 2. What the agent should do
 3. Expected deliverable (PR, review, document, etc.)
 
+### Handling "label already in use" Errors
+
+When `sessions_spawn` fails with "label already in use", it means a previous session with that role (e.g. `vc:dev`) is still registered. **Do NOT give up.** Follow this protocol:
+
+1. **List sessions** to find the conflicting one:
+   ```
+   sessions_list
+   ```
+2. **Check the session's state**: If the scheduler digest says "active for Xmin" and X > 60, the session is likely stale.
+3. **Delete the stale session**:
+   ```
+   sessions_delete <session_id>
+   ```
+4. **Retry the spawn** immediately after deletion.
+5. If the session is **legitimately active** (< 30 min old and working on a task), do NOT delete it. Instead, wait for the next scheduler cycle — the scheduler will notify you when the role becomes available.
+
+**Important**: The scheduler automatically cleans sessions older than 60 minutes. But if you encounter a spawn failure, handle it proactively rather than waiting.
+
 When asking sub-agents to create Feishu documents (reports, specs), remind them:
 - `feishu_doc create` only creates an **empty** document — they MUST follow with `feishu_doc write` to fill in content
 - For images/screenshots: use `feishu_doc upload_image` with `file_path` for local files or `image` for base64
