@@ -159,7 +159,7 @@ async function tick(
       );
       // Wake the CEO agent to process the event
       api.runtime.system.requestHeartbeatNow({
-        reason: `virtucorp-scheduler: ${digest.action}`,
+        reason: "wake",
         agentId: CEO_AGENT_ID,
       });
 
