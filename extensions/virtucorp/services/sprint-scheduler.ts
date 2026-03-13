@@ -55,6 +55,23 @@ export function shouldDispatchToCEO(digest: Digest, last: DispatchRecord | null,
 export function registerSprintScheduler(api: OpenClawPluginApi, config: VirtuCorpConfig) {
   let timer: ReturnType<typeof setInterval> | null = null;
 
+  // Resolve the CEO session key once at init.
+  // When the agent has heartbeat.session configured (e.g. bound to a Feishu group),
+  // we must enqueue events into that session so the heartbeat runner sees them.
+  let ceoSessionKey = `agent:${CEO_AGENT_ID}:main`;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cfg = api.runtime.config.loadConfig() as any;
+    const hbSession = cfg?.agents?.list
+      ?.find((a: { id?: string }) => a.id === CEO_AGENT_ID)
+      ?.heartbeat?.session?.trim();
+    if (hbSession) {
+      ceoSessionKey = `agent:${CEO_AGENT_ID}:${hbSession}`;
+    }
+  } catch {
+    // Fall back to main session if config parsing fails
+  }
+
   api.registerService({
     id: "virtucorp-sprint-scheduler",
 
@@ -155,7 +172,7 @@ async function tick(
       // Enqueue event text so it's prepended to CEO's next prompt
       api.runtime.system.enqueueSystemEvent(
         `[VirtuCorp Scheduler] ${digest.reason}${sessionInfo}`,
-        { sessionKey: `agent:${CEO_AGENT_ID}:main` },
+        { sessionKey: ceoSessionKey },
       );
       // Wake the CEO agent to process the event
       api.runtime.system.requestHeartbeatNow({
