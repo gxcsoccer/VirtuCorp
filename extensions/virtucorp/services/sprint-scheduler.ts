@@ -31,6 +31,11 @@ type DispatchRecord = {
 
 let lastDispatch: DispatchRecord | null = null;
 
+/** @internal Reset dispatch throttle state (for testing only) */
+export function _resetDispatchState() {
+  lastDispatch = null;
+}
+
 export function computeDigestHash(digest: Digest): string {
   const parts = [
     digest.action,
@@ -88,12 +93,12 @@ export function registerSprintScheduler(api: OpenClawPluginApi, config: VirtuCor
       );
 
       // Run once immediately, then on interval
-      await tick(api, config, ctx.logger).catch(err =>
+      await tick(api, config, ctx.logger, ceoSessionKey).catch(err =>
         ctx.logger.error(`VirtuCorp scheduler tick error: ${err}`),
       );
 
       timer = setInterval(async () => {
-        await tick(api, config, ctx.logger).catch(err =>
+        await tick(api, config, ctx.logger, ceoSessionKey).catch(err =>
           ctx.logger.error(`VirtuCorp scheduler tick error: ${err}`),
         );
       }, intervalMs);
@@ -115,6 +120,7 @@ async function tick(
   api: OpenClawPluginApi,
   config: VirtuCorpConfig,
   logger: { info: (msg: string) => void; warn: (msg: string) => void },
+  ceoSessionKey: string,
 ) {
   // ── Clean up stale sessions that block new spawns ──
   // We can only clear our in-memory metadata here (background service can't call subagent APIs).
@@ -335,6 +341,16 @@ export function buildDigest(state: SprintState | null, summary: GitHubSummary): 
     }
     return {
       reason: `Sprint ${state.current} completed. Ready to plan Sprint ${state.current + 1}.`,
+      action: "spawn_pm_plan",
+      details: summary,
+      sprintState: state,
+    };
+  }
+
+  // Sprint in planning but no issues created yet — PM needs to plan
+  if (state.status === "planning" && summary.readyForDev === 0 && summary.inProgress === 0 && summary.openPRs === 0) {
+    return {
+      reason: `Sprint ${state.current} is in planning but has no issues. Spawn PM to plan.`,
       action: "spawn_pm_plan",
       details: summary,
       sprintState: state,

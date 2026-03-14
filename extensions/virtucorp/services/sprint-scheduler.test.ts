@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { describe, test, expect, beforeEach, afterEach } from "vitest";
+import { describe, test, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   loadSprintState,
   saveSprintState,
@@ -13,7 +13,7 @@ import {
 } from "./sprint-scheduler.js";
 import type { GitHubSummary } from "./sprint-scheduler.js";
 import { createMockPluginApi } from "../test-helpers.js";
-import { registerSprintScheduler } from "./sprint-scheduler.js";
+import { registerSprintScheduler, _resetDispatchState } from "./sprint-scheduler.js";
 import type { SprintState } from "../lib/types.js";
 
 describe("sprint state persistence", () => {
@@ -195,9 +195,22 @@ describe("buildDigest", () => {
     expect(digest?.action).toBe("spawn_dev");
   });
 
-  test("returns null when nothing actionable", () => {
+  test("returns null when nothing actionable during execution", () => {
     const digest = buildDigest(baseState(), emptySummary());
     expect(digest).toBeNull();
+  });
+
+  test("returns spawn_pm_plan when planning status with no issues", () => {
+    const digest = buildDigest(baseState({ status: "planning" }), emptySummary());
+    expect(digest?.action).toBe("spawn_pm_plan");
+    expect(digest?.reason).toContain("planning");
+  });
+
+  test("returns null when planning status but issues already exist", () => {
+    const summary = { ...emptySummary(), readyForDev: 3 };
+    const digest = buildDigest(baseState({ status: "planning" }), summary);
+    // Should not trigger PM plan again — issues already exist, route to dev
+    expect(digest?.action).toBe("spawn_dev");
   });
 
   test("meta-improvement issues trigger investor notification", () => {
@@ -261,19 +274,118 @@ describe("shouldDispatchToCEO", () => {
 });
 
 describe("registerSprintScheduler", () => {
+  beforeEach(() => {
+    _resetDispatchState();
+  });
+
+  const baseConfig = {
+    github: { owner: "test", repo: "test" },
+    projectDir: "/tmp/test",
+    sprint: { durationDays: 14, autoRetro: true, heartbeatMinutes: 60 },
+    budget: { dailyLimitUsd: 5, circuitBreakerRetries: 3 },
+    roles: { pm: {}, dev: {}, qa: {}, ops: {} },
+  };
+
   test("registers a service with correct id", () => {
     const api = createMockPluginApi();
-    const config = {
-      github: { owner: "test", repo: "test" },
-      projectDir: "/tmp/test",
-      sprint: { durationDays: 14, autoRetro: true, heartbeatMinutes: 60 },
-      budget: { dailyLimitUsd: 5, circuitBreakerRetries: 3 },
-      roles: { pm: {}, dev: {}, qa: {}, ops: {} },
-    };
-    registerSprintScheduler(api as never, config);
+    registerSprintScheduler(api as never, baseConfig);
 
     expect(api.registerService).toHaveBeenCalledWith(
       expect.objectContaining({ id: "virtucorp-sprint-scheduler" }),
+    );
+  });
+
+  test("passes ceoSessionKey to tick so dispatch uses correct session", async () => {
+    const enqueueSystemEvent = vi.fn();
+    const requestHeartbeatNow = vi.fn();
+
+    const api = createMockPluginApi();
+    // Provide runtime.config.loadConfig that returns a heartbeat session
+    api.runtime = {
+      config: {
+        loadConfig: () => ({
+          agents: {
+            list: [
+              { id: "virtucorp-ceo", heartbeat: { session: "feishu-group-123" } },
+            ],
+          },
+        }),
+      },
+      system: {
+        enqueueSystemEvent,
+        requestHeartbeatNow,
+      },
+    };
+
+    registerSprintScheduler(api as never, baseConfig);
+
+    // Extract the registered service and call start
+    const service = (api.registerService as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+    // start() calls tick() which calls collectGitHubSummary (shells out to gh).
+    // Since gh will fail in test, collectGitHubSummary returns empty summary.
+    // With no sprint state file, buildDigest returns spawn_pm_plan → dispatches to CEO.
+    await service.start({ logger });
+
+    // The key assertion: enqueueSystemEvent must be called with the resolved session key
+    expect(enqueueSystemEvent).toHaveBeenCalledWith(
+      expect.stringContaining("[VirtuCorp Scheduler]"),
+      { sessionKey: "agent:virtucorp-ceo:feishu-group-123" },
+    );
+  });
+
+  test("falls back to main session when no heartbeat config", async () => {
+    const enqueueSystemEvent = vi.fn();
+    const requestHeartbeatNow = vi.fn();
+
+    const api = createMockPluginApi();
+    api.runtime = {
+      config: {
+        loadConfig: () => ({ agents: { list: [] } }),
+      },
+      system: {
+        enqueueSystemEvent,
+        requestHeartbeatNow,
+      },
+    };
+
+    registerSprintScheduler(api as never, baseConfig);
+
+    const service = (api.registerService as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    await service.start({ logger });
+
+    expect(enqueueSystemEvent).toHaveBeenCalledWith(
+      expect.stringContaining("[VirtuCorp Scheduler]"),
+      { sessionKey: "agent:virtucorp-ceo:main" },
+    );
+  });
+
+  test("falls back to main session when loadConfig throws", async () => {
+    const enqueueSystemEvent = vi.fn();
+    const requestHeartbeatNow = vi.fn();
+
+    const api = createMockPluginApi();
+    api.runtime = {
+      config: {
+        loadConfig: () => { throw new Error("config broken"); },
+      },
+      system: {
+        enqueueSystemEvent,
+        requestHeartbeatNow,
+      },
+    };
+
+    registerSprintScheduler(api as never, baseConfig);
+
+    const service = (api.registerService as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    await service.start({ logger });
+
+    expect(enqueueSystemEvent).toHaveBeenCalledWith(
+      expect.stringContaining("[VirtuCorp Scheduler]"),
+      { sessionKey: "agent:virtucorp-ceo:main" },
     );
   });
 });
