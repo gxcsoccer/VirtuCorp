@@ -28,6 +28,7 @@ const SMOKE_TEST_INTERVAL_TICKS = 3; // Run production smoke test every 3rd tick
 type DispatchRecord = {
   digestHash: string;
   timestamp: number;
+  consecutiveCount: number; // How many times same action dispatched without state change
 };
 
 let lastDispatch: DispatchRecord | null = null;
@@ -200,9 +201,32 @@ async function tick(
     }
 
     try {
+      const currentHash = computeDigestHash(digest);
+      const consecutive = lastDispatch && lastDispatch.digestHash === currentHash
+        ? lastDispatch.consecutiveCount + 1
+        : 1;
+
+      // If we've dispatched the same action 3+ times without state change,
+      // CEO is stuck. Reset its session to clear context and retry.
+      if (consecutive >= 3) {
+        logger.warn(
+          `VirtuCorp scheduler: CEO stuck on ${digest.action} (${consecutive} consecutive dispatches). Resetting CEO session.`,
+        );
+        try {
+          await api.runtime.system.requestSessionReset({
+            agentId: CEO_AGENT_ID,
+          });
+        } catch {
+          // requestSessionReset may not exist — fall back to enqueue with reset hint
+        }
+      }
+
       // Enqueue event text so it's prepended to CEO's next prompt
+      const urgencyPrefix = consecutive >= 3
+        ? "⚠️ URGENT: This action has been dispatched multiple times but not executed. You MUST act on it NOW.\n\n"
+        : "";
       api.runtime.system.enqueueSystemEvent(
-        `[VirtuCorp Scheduler] ${digest.reason}${sessionInfo}`,
+        `[VirtuCorp Scheduler] ${urgencyPrefix}${digest.reason}${sessionInfo}`,
         { sessionKey: ceoSessionKey },
       );
       // Wake the CEO agent to process the event
@@ -212,10 +236,11 @@ async function tick(
       });
 
       lastDispatch = {
-        digestHash: computeDigestHash(digest),
+        digestHash: currentHash,
         timestamp: Date.now(),
+        consecutiveCount: consecutive,
       };
-      logger.info(`VirtuCorp scheduler: dispatched to CEO (action=${digest.action})`);
+      logger.info(`VirtuCorp scheduler: dispatched to CEO (action=${digest.action}, attempt=${consecutive})`);
     } catch (err) {
       logger.warn(`VirtuCorp scheduler: failed to dispatch to CEO: ${err}`);
     }
