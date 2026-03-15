@@ -306,9 +306,12 @@ async function tick(
           void api.runtime.subagent.run({
             sessionKey: ceoSessionKey,
             idempotencyKey: `vc-emergency-${digest.action}-${Date.now()}`,
-            message: `⚠️ EMERGENCY: Action "${digest.action}" has failed 3+ times. ` +
-              `Run \`sessions_list\` now, delete ANY session with label starting with "vc:", ` +
-              `then execute: ${actionDetail}`,
+            message: `⚠️ EMERGENCY: Action "${digest.action}" has failed 3+ times due to stale sessions. ` +
+              `Step 1: Run \`sessions_list\` to find sessions with labels starting with "vc:". ` +
+              `Step 2: Run \`sessions_delete\` on each one. ` +
+              `Step 3: Spawn the appropriate role agent via \`sessions_spawn\`. ` +
+              `Task: ${actionDetail}. ` +
+              `IMPORTANT: Do NOT read or modify code yourself — you MUST spawn Dev (vc:dev) for any code work.`,
           });
         } catch {
           // Emergency message failed — will retry next cycle

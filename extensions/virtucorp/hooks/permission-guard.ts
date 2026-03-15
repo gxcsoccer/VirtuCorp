@@ -25,10 +25,55 @@ const PROTECTED_FILE_PATTERNS = [
   /permission-guard\.test\.ts/,
 ];
 
+const CEO_AGENT_ID = "virtucorp-ceo";
+
+/** Source code file extensions that CEO must NOT read or modify. */
+const SOURCE_CODE_PATTERN = /\.(tsx?|jsx?|css|scss|vue|svelte|json)$/i;
+
+/** Paths CEO IS allowed to read (config, sprint state, knowledge). */
+const CEO_ALLOWED_PATH_PATTERNS = [
+  /\.virtucorp\//,
+  /package\.json$/,
+  /vercel\.json$/,
+  /\.opencode\.json$/,
+];
+
 export function registerPermissionGuard(api: OpenClawPluginApi) {
   api.on("before_tool_call", async (event, ctx) => {
     const role = getRoleMetadata(ctx.sessionKey);
-    if (!role) return; // CEO session — unrestricted
+
+    // ── CEO code access guard ──────────────────────────────
+    // CEO must delegate code work to Dev. Block read/write/edit on source code files.
+    const isCeoSession = !role && ctx.sessionKey?.includes(CEO_AGENT_ID);
+    if (isCeoSession) {
+      const toolName = event.toolName;
+      const isCodeTool = toolName === "read" || toolName === "write" || toolName === "edit" || toolName === "apply_patch";
+      if (isCodeTool) {
+        const filePath = (event.params.file_path as string) ?? (event.params.path as string) ?? "";
+        const isSourceCode = SOURCE_CODE_PATTERN.test(filePath);
+        const isAllowed = CEO_ALLOWED_PATH_PATTERNS.some(p => p.test(filePath));
+        if (isSourceCode && !isAllowed) {
+          return {
+            block: true,
+            blockReason: `[VirtuCorp] CEO cannot read or modify source code. Spawn Dev (vc:dev) to handle code changes. File: ${filePath}`,
+          };
+        }
+      }
+      // CEO also cannot run build/test commands
+      const isShellTool = toolName === "execute_command" || toolName === "shell" || toolName === "bash";
+      if (isShellTool) {
+        const cmd = (event.params.command as string) ?? (event.params.cmd as string) ?? "";
+        if (/\b(npm\s+(run\s+)?(build|test|dev)|tsc|vite|vercel)\b/.test(cmd)) {
+          return {
+            block: true,
+            blockReason: `[VirtuCorp] CEO cannot run build/test/deploy commands. Spawn the appropriate role agent.`,
+          };
+        }
+      }
+      return; // Other CEO operations are fine
+    }
+
+    if (!role) return; // Non-VirtuCorp session — unrestricted
 
     // ── Gate registered vc_* tools ──────────────────────────
 

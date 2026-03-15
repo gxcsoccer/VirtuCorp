@@ -228,4 +228,68 @@ describe("permission-guard hook", () => {
     const result = await api._callHook("before_tool_call", event, ctx);
     expect(result).toBeUndefined();
   });
+
+  // ── CEO code access guard ──────────────────────────────────
+
+  test("blocks CEO from reading source code files", async () => {
+    const event = makeToolCallEvent({
+      toolName: "read",
+      params: { file_path: "/Users/lang/workspace/AlphaArena/src/client/pages/HomePage.tsx" },
+    });
+    const ctx = makeAgentContext({ sessionKey: "agent:virtucorp-ceo:main" });
+    const result = await api._callHook("before_tool_call", event, ctx);
+    expect(result).toEqual(expect.objectContaining({ block: true }));
+    expect((result as { blockReason: string }).blockReason).toContain("CEO cannot read or modify source code");
+  });
+
+  test("blocks CEO from editing source code files", async () => {
+    const event = makeToolCallEvent({
+      toolName: "edit",
+      params: { file_path: "/path/to/project/src/App.tsx" },
+    });
+    const ctx = makeAgentContext({ sessionKey: "agent:virtucorp-ceo:feishu:group:abc" });
+    const result = await api._callHook("before_tool_call", event, ctx);
+    expect(result).toEqual(expect.objectContaining({ block: true }));
+  });
+
+  test("allows CEO to read .virtucorp files", async () => {
+    const event = makeToolCallEvent({
+      toolName: "read",
+      params: { file_path: "/path/to/project/.virtucorp/sprint.json" },
+    });
+    const ctx = makeAgentContext({ sessionKey: "agent:virtucorp-ceo:main" });
+    const result = await api._callHook("before_tool_call", event, ctx);
+    expect(result).toBeUndefined();
+  });
+
+  test("allows CEO to read package.json", async () => {
+    const event = makeToolCallEvent({
+      toolName: "read",
+      params: { file_path: "/path/to/project/package.json" },
+    });
+    const ctx = makeAgentContext({ sessionKey: "agent:virtucorp-ceo:main" });
+    const result = await api._callHook("before_tool_call", event, ctx);
+    expect(result).toBeUndefined();
+  });
+
+  test("blocks CEO from running npm test", async () => {
+    const event = makeToolCallEvent({
+      toolName: "bash",
+      params: { command: "npm test" },
+    });
+    const ctx = makeAgentContext({ sessionKey: "agent:virtucorp-ceo:main" });
+    const result = await api._callHook("before_tool_call", event, ctx);
+    expect(result).toEqual(expect.objectContaining({ block: true }));
+    expect((result as { blockReason: string }).blockReason).toContain("CEO cannot run build/test/deploy");
+  });
+
+  test("allows CEO to run gh commands", async () => {
+    const event = makeToolCallEvent({
+      toolName: "bash",
+      params: { command: "gh issue list --repo gxcsoccer/AlphaArena" },
+    });
+    const ctx = makeAgentContext({ sessionKey: "agent:virtucorp-ceo:main" });
+    const result = await api._callHook("before_tool_call", event, ctx);
+    expect(result).toBeUndefined();
+  });
 });
