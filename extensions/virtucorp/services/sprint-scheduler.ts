@@ -14,8 +14,9 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core";
 import { gh } from "../lib/github-client.js";
-import { getActiveSessions, getStaleSessions, clearRoleMetadata } from "../lib/role-metadata.js";
-import type { SprintState, VirtuCorpConfig } from "../lib/types.js";
+import { getActiveSessions, getStaleSessions, clearRoleMetadata, setRoleMetadata, getRoleMetadata } from "../lib/role-metadata.js";
+import type { SprintState, VirtuCorpConfig, VirtuCorpRole } from "../lib/types.js";
+import { VIRTUCORP_ROLES } from "../lib/types.js";
 
 const SPRINT_STATE_FILE = ".virtucorp/sprint.json";
 const CEO_AGENT_ID = "virtucorp-ceo";
@@ -164,6 +165,29 @@ async function tick(
   logger: { info: (msg: string) => void; warn: (msg: string) => void },
   ceoSessionKey: string,
 ) {
+  // ── Discover unknown vc:* sessions so stale cleanup can handle them ──
+  // This catches sessions created before persistence was enabled, or leaked sessions.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const listFn = (api.runtime.subagent as any).listSessions ?? (api.runtime.subagent as any).list;
+    if (typeof listFn === "function") {
+      const sessions = await listFn.call(api.runtime.subagent) as Array<{ sessionKey: string; label?: string; createdAt?: number }>;
+      for (const session of sessions) {
+        const label = session.label;
+        if (!label || !label.startsWith("vc:")) continue;
+        const role = label.replace("vc:", "") as VirtuCorpRole;
+        if (!VIRTUCORP_ROLES.includes(role)) continue;
+        if (getRoleMetadata(session.sessionKey)) continue; // Already tracked
+        // Register with original createdAt if available, otherwise mark as old enough to be stale
+        const createdAt = session.createdAt ?? Date.now() - (STALE_SESSION_MAX_MINUTES + 1) * 60_000;
+        setRoleMetadata(session.sessionKey, role);
+        logger.info(`VirtuCorp scheduler: discovered untracked session vc:${role}: ${session.sessionKey}`);
+      }
+    }
+  } catch {
+    // listSessions not available — rely on metadata-based cleanup only
+  }
+
   // ── Clean up stale sessions that block new spawns ──
   // Clear in-memory metadata AND delete the actual OpenClaw session to free the label.
   const staleSessions = getStaleSessions(STALE_SESSION_MAX_MINUTES);
