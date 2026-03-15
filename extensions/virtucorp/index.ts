@@ -15,6 +15,7 @@ import { resolveConfig } from "./config.js";
 import { registerContextLoader } from "./hooks/context-loader.js";
 import { registerModelRouter } from "./hooks/model-router.js";
 import { registerPermissionGuard } from "./hooks/permission-guard.js";
+import { initPersistence } from "./lib/role-metadata.js";
 import { registerRoleInjector } from "./hooks/role-injector.js";
 import { registerTaskRouter } from "./hooks/task-router.js";
 import { registerUsageTracker } from "./hooks/usage-tracker.js";
@@ -36,6 +37,9 @@ export default {
     api.logger.info(
       `VirtuCorp: initializing for ${config.github.owner}/${config.github.repo}`,
     );
+
+    // ── Persistence ─────────────────────────────────────────
+    void initPersistence(config.projectDir);
 
     // ── Tools ──────────────────────────────────────────────
     registerPRTools(api, config.github);            // gated: review + merge
