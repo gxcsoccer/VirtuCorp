@@ -124,7 +124,7 @@ describe("isSprintExpired", () => {
 // ── buildDigest tests ────────────────────────────────────────
 
 function emptySummary(): GitHubSummary {
-  return { readyForDev: 0, inProgress: 0, inReview: 0, openPRs: 0, p0Bugs: [], needsApprovalPRs: [], needsApprovalIssues: [] };
+  return { readyForDev: 0, inProgress: 0, inReview: 0, openPRs: 0, untriaged: [], p0Bugs: [], needsApprovalPRs: [], needsApprovalIssues: [] };
 }
 
 function baseState(overrides?: Partial<SprintState>): SprintState {
@@ -220,6 +220,27 @@ describe("buildDigest", () => {
     };
     const digest = buildDigest(baseState(), summary);
     expect(digest?.action).toBe("notify_investor_approval");
+  });
+
+  test("untriaged issues trigger PM triage during execution", () => {
+    const summary = {
+      ...emptySummary(),
+      untriaged: [{ number: 95, title: "Implement stop-loss orders" }],
+    };
+    const digest = buildDigest(baseState(), summary);
+    expect(digest?.action).toBe("spawn_pm_plan");
+    expect(digest?.reason).toContain("untriaged");
+    expect(digest?.reason).toContain("#95");
+  });
+
+  test("ready-for-dev takes priority over untriaged", () => {
+    const summary = {
+      ...emptySummary(),
+      readyForDev: 1,
+      untriaged: [{ number: 95, title: "Implement stop-loss orders" }],
+    };
+    const digest = buildDigest(baseState(), summary);
+    expect(digest?.action).toBe("spawn_dev");
   });
 });
 

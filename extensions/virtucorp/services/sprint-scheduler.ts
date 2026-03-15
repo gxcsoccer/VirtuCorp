@@ -260,6 +260,7 @@ export type GitHubSummary = {
   inProgress: number;
   inReview: number;
   openPRs: number;
+  untriaged: Array<{ number: number; title: string }>;
   p0Bugs: Array<{ number: number; title: string }>;
   needsApprovalPRs: Array<{ number: number; title: string }>;
   needsApprovalIssues: Array<{ number: number; title: string }>;
@@ -280,15 +281,21 @@ async function collectGitHubSummary(config: VirtuCorpConfig): Promise<GitHubSumm
     let inReview = 0;
 
     const p0Bugs: Array<{ number: number; title: string }> = [];
+    const untriaged: Array<{ number: number; title: string }> = [];
 
     for (const issue of issues) {
       const labelNames = issue.labels.map(l => l.name);
+      const hasStatusLabel = labelNames.some(l => l.startsWith("status/"));
       if (labelNames.includes("status/ready-for-dev")) readyForDev++;
       if (labelNames.includes("status/in-progress")) inProgress++;
       if (labelNames.includes("status/in-review")) inReview++;
       // Track P0 bugs separately — these need urgent attention
       if (labelNames.includes("priority/p0") && labelNames.includes("type/bug")) {
         p0Bugs.push({ number: issue.number, title: issue.title });
+      }
+      // Issues with no status/* label need PM triage
+      if (!hasStatusLabel && !labelNames.includes("needs-investor-approval")) {
+        untriaged.push({ number: issue.number, title: issue.title });
       }
     }
 
@@ -300,9 +307,9 @@ async function collectGitHubSummary(config: VirtuCorpConfig): Promise<GitHubSumm
       .filter(issue => issue.labels.some(l => l.name === "needs-investor-approval"))
       .map(issue => ({ number: issue.number, title: issue.title }));
 
-    return { readyForDev, inProgress, inReview, openPRs: prs.length, p0Bugs, needsApprovalPRs, needsApprovalIssues };
+    return { readyForDev, inProgress, inReview, openPRs: prs.length, untriaged, p0Bugs, needsApprovalPRs, needsApprovalIssues };
   } catch {
-    return { readyForDev: 0, inProgress: 0, inReview: 0, openPRs: 0, p0Bugs: [], needsApprovalPRs: [], needsApprovalIssues: [] };
+    return { readyForDev: 0, inProgress: 0, inReview: 0, openPRs: 0, untriaged: [], p0Bugs: [], needsApprovalPRs: [], needsApprovalIssues: [] };
   }
 }
 
@@ -412,6 +419,17 @@ export function buildDigest(state: SprintState | null, summary: GitHubSummary): 
     return {
       reason: `${summary.needsApprovalIssues.length} meta-improvement issue(s) awaiting investor approval: ${issueList}`,
       action: "notify_investor_approval",
+      details: summary,
+      sprintState: state,
+    };
+  }
+
+  // Open issues without status labels need PM triage
+  if (summary.untriaged.length > 0) {
+    const issueList = summary.untriaged.map(i => `#${i.number}: ${i.title}`).join(", ");
+    return {
+      reason: `${summary.untriaged.length} untriaged issue(s) need PM to add status labels: ${issueList}`,
+      action: "spawn_pm_plan",
       details: summary,
       sprintState: state,
     };
