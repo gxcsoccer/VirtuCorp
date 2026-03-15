@@ -124,7 +124,7 @@ describe("permission-guard hook", () => {
 
   // ── Constitutional guard (protected files) ─────────────────
 
-  test("blocks Dev from editing permission-guard.ts", async () => {
+  test("blocks Dev from editing permission-guard.ts (OpenCode rule takes precedence)", async () => {
     setRoleMetadata("session-dev", "dev");
     const event = makeToolCallEvent({
       toolName: "edit",
@@ -133,7 +133,7 @@ describe("permission-guard hook", () => {
     const ctx = makeAgentContext({ sessionKey: "session-dev" });
     const result = await api._callHook("before_tool_call", event, ctx) as { block: boolean; blockReason: string };
     expect(result?.block).toBe(true);
-    expect(result?.blockReason).toContain("Constitutional guard");
+    // Dev's write/edit is blocked before reaching constitutional guard
   });
 
   test("blocks QA from writing to permission-guard.test.ts", async () => {
@@ -147,7 +147,7 @@ describe("permission-guard hook", () => {
     expect(result?.block).toBe(true);
   });
 
-  test("allows Dev to edit non-protected files", async () => {
+  test("blocks Dev from editing any file (must use OpenCode)", async () => {
     setRoleMetadata("session-dev", "dev");
     const event = makeToolCallEvent({
       toolName: "edit",
@@ -155,7 +155,7 @@ describe("permission-guard hook", () => {
     });
     const ctx = makeAgentContext({ sessionKey: "session-dev" });
     const result = await api._callHook("before_tool_call", event, ctx);
-    expect(result).toBeUndefined();
+    expect(result).toEqual(expect.objectContaining({ block: true }));
   });
 
   // ── Vercel deployment interception ─────────────────────────
@@ -289,6 +289,64 @@ describe("permission-guard hook", () => {
       params: { command: "gh issue list --repo gxcsoccer/AlphaArena" },
     });
     const ctx = makeAgentContext({ sessionKey: "agent:virtucorp-ceo:main" });
+    const result = await api._callHook("before_tool_call", event, ctx);
+    expect(result).toBeUndefined();
+  });
+
+  // ── Dev OpenCode enforcement ──────────────────────────────
+
+  test("blocks Dev from using edit tool", async () => {
+    setRoleMetadata("session-dev", "dev");
+    const event = makeToolCallEvent({
+      toolName: "edit",
+      params: { file_path: "/path/to/project/src/App.tsx" },
+    });
+    const ctx = makeAgentContext({ sessionKey: "session-dev" });
+    const result = await api._callHook("before_tool_call", event, ctx);
+    expect(result).toEqual(expect.objectContaining({ block: true }));
+    expect((result as { blockReason: string }).blockReason).toContain("OpenCode");
+  });
+
+  test("blocks Dev from using write tool", async () => {
+    setRoleMetadata("session-dev", "dev");
+    const event = makeToolCallEvent({
+      toolName: "write",
+      params: { file_path: "/path/to/project/src/components/Chart.ts" },
+    });
+    const ctx = makeAgentContext({ sessionKey: "session-dev" });
+    const result = await api._callHook("before_tool_call", event, ctx);
+    expect(result).toEqual(expect.objectContaining({ block: true }));
+  });
+
+  test("blocks Dev from using write tool even on non-source files", async () => {
+    setRoleMetadata("session-dev", "dev");
+    const event = makeToolCallEvent({
+      toolName: "write",
+      params: { file_path: "/path/to/project/.virtucorp/knowledge/foo.md" },
+    });
+    const ctx = makeAgentContext({ sessionKey: "session-dev" });
+    const result = await api._callHook("before_tool_call", event, ctx);
+    expect(result).toEqual(expect.objectContaining({ block: true }));
+  });
+
+  test("allows Dev to read source code files", async () => {
+    setRoleMetadata("session-dev", "dev");
+    const event = makeToolCallEvent({
+      toolName: "read",
+      params: { file_path: "/path/to/project/src/App.tsx" },
+    });
+    const ctx = makeAgentContext({ sessionKey: "session-dev" });
+    const result = await api._callHook("before_tool_call", event, ctx);
+    expect(result).toBeUndefined();
+  });
+
+  test("allows QA to edit source code (not restricted)", async () => {
+    setRoleMetadata("session-qa", "qa");
+    const event = makeToolCallEvent({
+      toolName: "edit",
+      params: { file_path: "/path/to/project/src/App.tsx" },
+    });
+    const ctx = makeAgentContext({ sessionKey: "session-qa" });
     const result = await api._callHook("before_tool_call", event, ctx);
     expect(result).toBeUndefined();
   });

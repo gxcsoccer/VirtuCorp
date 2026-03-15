@@ -104,6 +104,21 @@ export function registerPermissionGuard(api: OpenClawPluginApi) {
       }
     }
 
+    // ── Dev: block write/edit tools — must use OpenCode CLI instead ──
+    if (role === "dev") {
+      const isWriteTool =
+        event.toolName === "write" ||
+        event.toolName === "edit" ||
+        event.toolName === "apply_patch";
+
+      if (isWriteTool) {
+        return {
+          block: true,
+          blockReason: `[VirtuCorp] Dev cannot use write/edit tools directly. Use OpenCode CLI (\`opencode -p "..." -q -c /path/to/project\`) for all code modifications. This ensures LSP diagnostics and higher code quality.`,
+        };
+      }
+    }
+
     // ── Constitutional guard: protect safety-critical files ──
 
     const isWriteTool =
