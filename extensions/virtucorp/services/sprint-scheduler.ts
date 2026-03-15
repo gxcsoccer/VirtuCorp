@@ -231,9 +231,14 @@ async function tick(
 
   tickCount++;
 
-  // Build a status digest for the CEO to act on
-  const shouldSmoke = config.productionUrl && tickCount % SMOKE_TEST_INTERVAL_TICKS === 0;
-  const digest = buildDigest(state, summary, { productionUrl: shouldSmoke ? config.productionUrl : undefined });
+  // Build a status digest for the CEO to act on.
+  // First try without smoke test to see if there's higher-priority work.
+  // If nothing actionable and productionUrl is configured, run smoke test.
+  // This ensures production health is checked whenever the system is idle.
+  let digest = buildDigest(state, summary);
+  if (!digest && config.productionUrl) {
+    digest = buildDigest(state, summary, { productionUrl: config.productionUrl });
+  }
   if (!digest) return;
 
   logger.info(`VirtuCorp scheduler: ${digest.reason}`);
