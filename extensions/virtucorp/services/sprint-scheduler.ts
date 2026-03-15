@@ -23,7 +23,7 @@ const DISPATCH_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes
 const STALE_SESSION_MAX_MINUTES = 60; // Sessions older than 60 min are likely stale
 const SMOKE_TEST_INTERVAL_TICKS = 3; // Run production smoke test every 3rd tick
 
-// ── Dispatch throttle state (in-memory, resets on restart = immediate first dispatch) ──
+// ── Dispatch throttle state (persisted to survive restarts) ──
 
 type DispatchRecord = {
   digestHash: string;
@@ -31,15 +31,48 @@ type DispatchRecord = {
   consecutiveCount: number; // How many times same action dispatched without state change
 };
 
+type SchedulerPersistState = {
+  lastDispatch: DispatchRecord | null;
+  highWaterMark: number;
+};
+
+const SCHEDULER_STATE_FILE = ".virtucorp/scheduler-state.json";
+
 let lastDispatch: DispatchRecord | null = null;
 let highWaterMark = 0; // Tracks highest sprint number seen, prevents regression
 let tickCount = 0; // Counts ticks for periodic smoke test scheduling
+let schedulerStatePath: string | null = null;
+
+async function loadSchedulerState(projectDir: string): Promise<void> {
+  schedulerStatePath = join(projectDir, SCHEDULER_STATE_FILE);
+  try {
+    const raw = await readFile(schedulerStatePath, "utf-8");
+    const state = JSON.parse(raw) as SchedulerPersistState;
+    lastDispatch = state.lastDispatch;
+    highWaterMark = state.highWaterMark ?? 0;
+  } catch {
+    // No saved state — start fresh
+  }
+}
+
+async function saveSchedulerState(): Promise<void> {
+  if (!schedulerStatePath) return;
+  try {
+    const dir = schedulerStatePath.replace(/\/[^/]+$/, "");
+    await mkdir(dir, { recursive: true });
+    const state: SchedulerPersistState = { lastDispatch, highWaterMark };
+    await writeFile(schedulerStatePath, JSON.stringify(state, null, 2), "utf-8");
+  } catch {
+    // Best-effort
+  }
+}
 
 /** @internal Reset dispatch throttle state (for testing only) */
 export function _resetDispatchState() {
   lastDispatch = null;
   highWaterMark = 0;
   tickCount = 0;
+  schedulerStatePath = null;
 }
 
 export function computeDigestHash(digest: Digest): string {
@@ -92,6 +125,9 @@ export function registerSprintScheduler(api: OpenClawPluginApi, config: VirtuCor
         ctx.logger.info("VirtuCorp scheduler: heartbeat disabled (0 min interval)");
         return;
       }
+
+      // Load persisted state (lastDispatch, highWaterMark) so we survive restarts
+      await loadSchedulerState(config.projectDir);
 
       ctx.logger.info(
         `VirtuCorp scheduler: starting (every ${config.sprint.heartbeatMinutes}min, ` +
@@ -157,6 +193,7 @@ async function tick(
   }
   if (state && state.current > highWaterMark) {
     highWaterMark = state.current;
+    void saveSchedulerState();
   }
 
   // Check if Sprint has expired
@@ -240,6 +277,7 @@ async function tick(
         timestamp: Date.now(),
         consecutiveCount: consecutive,
       };
+      void saveSchedulerState();
       logger.info(`VirtuCorp scheduler: dispatched to CEO (action=${digest.action}, attempt=${consecutive})`);
     } catch (err) {
       logger.warn(`VirtuCorp scheduler: failed to dispatch to CEO: ${err}`);
