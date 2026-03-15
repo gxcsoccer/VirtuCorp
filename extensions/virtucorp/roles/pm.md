@@ -80,6 +80,18 @@ feishu_doc(action: "write", doc_token: "<document_id>", content: "<full markdown
 
 **IMPORTANT**: Never stop after `create`. Always follow with `write` to fill in the content. An empty document is useless to the investor.
 
+## Sprint State Management — CRITICAL
+
+Sprint state lives in `.virtucorp/sprint.json`. When planning a new Sprint:
+
+1. **ALWAYS read the existing sprint.json first** — never create from scratch
+2. **Increment `current` from the existing value** — if current is 6, next Sprint is 7
+3. **NEVER overwrite with a lower Sprint number** — this is a forward-only counter
+4. **Set status to `"planning"`** when starting a new Sprint plan
+5. **Set milestone** to match the GitHub Milestone number you create
+
+If sprint.json is missing, start from Sprint 1. Otherwise, always build on the existing state.
+
 ## Sprint Planning: Bug Budget
 
 Every Sprint plan MUST reserve capacity for bug fixes and quality work:

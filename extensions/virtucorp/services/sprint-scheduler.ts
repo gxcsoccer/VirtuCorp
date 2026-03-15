@@ -30,10 +30,12 @@ type DispatchRecord = {
 };
 
 let lastDispatch: DispatchRecord | null = null;
+let highWaterMark = 0; // Tracks highest sprint number seen, prevents regression
 
 /** @internal Reset dispatch throttle state (for testing only) */
 export function _resetDispatchState() {
   lastDispatch = null;
+  highWaterMark = 0;
 }
 
 export function computeDigestHash(digest: Digest): string {
@@ -123,18 +125,35 @@ async function tick(
   ceoSessionKey: string,
 ) {
   // ── Clean up stale sessions that block new spawns ──
-  // We can only clear our in-memory metadata here (background service can't call subagent APIs).
-  // The CEO prompt instructs it to `sessions_delete` the actual OpenClaw session if spawn fails.
+  // Clear in-memory metadata AND delete the actual OpenClaw session to free the label.
   const staleSessions = getStaleSessions(STALE_SESSION_MAX_MINUTES);
   for (const stale of staleSessions) {
     logger.warn(
-      `VirtuCorp scheduler: clearing stale ${stale.role} metadata (${stale.ageMinutes}min old): ${stale.sessionKey}`,
+      `VirtuCorp scheduler: clearing stale ${stale.role} session (${stale.ageMinutes}min old): ${stale.sessionKey}`,
     );
     clearRoleMetadata(stale.sessionKey);
+    try {
+      await api.runtime.subagent.deleteSession({ sessionKey: stale.sessionKey });
+      logger.info(`VirtuCorp scheduler: deleted stale session ${stale.sessionKey} to free vc:${stale.role} label`);
+    } catch (err) {
+      logger.warn(`VirtuCorp scheduler: failed to delete stale session ${stale.sessionKey}: ${err}`);
+    }
   }
 
   const state = await loadSprintState(config.projectDir);
   const summary = await collectGitHubSummary(config);
+
+  // Guard against sprint regression (e.g. PM accidentally overwrites with lower number)
+  if (state && highWaterMark > 0 && state.current < highWaterMark) {
+    logger.warn(
+      `VirtuCorp scheduler: sprint.json regressed from ${highWaterMark} to ${state.current}! Restoring.`,
+    );
+    state.current = highWaterMark;
+    await saveSprintState(config.projectDir, state);
+  }
+  if (state && state.current > highWaterMark) {
+    highWaterMark = state.current;
+  }
 
   // Check if Sprint has expired
   if (state && isSprintExpired(state)) {

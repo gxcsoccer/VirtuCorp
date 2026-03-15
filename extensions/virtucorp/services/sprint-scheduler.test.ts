@@ -315,6 +315,9 @@ describe("registerSprintScheduler", () => {
         enqueueSystemEvent,
         requestHeartbeatNow,
       },
+      subagent: {
+        deleteSession: vi.fn().mockResolvedValue(undefined),
+      },
     };
 
     registerSprintScheduler(api as never, baseConfig);
@@ -348,6 +351,9 @@ describe("registerSprintScheduler", () => {
         enqueueSystemEvent,
         requestHeartbeatNow,
       },
+      subagent: {
+        deleteSession: vi.fn().mockResolvedValue(undefined),
+      },
     };
 
     registerSprintScheduler(api as never, baseConfig);
@@ -375,6 +381,9 @@ describe("registerSprintScheduler", () => {
         enqueueSystemEvent,
         requestHeartbeatNow,
       },
+      subagent: {
+        deleteSession: vi.fn().mockResolvedValue(undefined),
+      },
     };
 
     registerSprintScheduler(api as never, baseConfig);
@@ -386,6 +395,76 @@ describe("registerSprintScheduler", () => {
     expect(enqueueSystemEvent).toHaveBeenCalledWith(
       expect.stringContaining("[VirtuCorp Scheduler]"),
       { sessionKey: "agent:virtucorp-ceo:main" },
+    );
+  });
+});
+
+describe("sprint regression guard", () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "vc-regress-test-"));
+    _resetDispatchState();
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  function makeMockApi() {
+    const api = createMockPluginApi();
+    api.runtime = {
+      config: { loadConfig: () => ({ agents: { list: [] } }) },
+      system: { enqueueSystemEvent: vi.fn(), requestHeartbeatNow: vi.fn() },
+      subagent: { deleteSession: vi.fn().mockResolvedValue(undefined) },
+    };
+    return api;
+  }
+
+  test("detects and restores regressed sprint number on next tick", async () => {
+    // Save Sprint 6
+    await saveSprintState(tmpDir, {
+      current: 6, startDate: "2026-04-09", endDate: "2026-04-16",
+      milestone: 7, status: "executing",
+    });
+
+    const api = makeMockApi();
+    const config = {
+      github: { owner: "test", repo: "test" },
+      projectDir: tmpDir,
+      sprint: { durationDays: 14, autoRetro: true, heartbeatMinutes: 60 },
+      budget: { dailyLimitUsd: 5, circuitBreakerRetries: 3 },
+      roles: { pm: {}, dev: {}, qa: {}, ops: {} },
+    };
+
+    registerSprintScheduler(api as never, config);
+    const service = (api.registerService as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+    // First tick: learns highWaterMark = 6
+    await service.start({ logger });
+    await service.stop({ logger });
+
+    // PM overwrites sprint.json with Sprint 2 (regression!)
+    await saveSprintState(tmpDir, {
+      current: 2, startDate: "2026-03-12", endDate: "2026-03-19",
+      milestone: 3, status: "review",
+    });
+
+    // DON'T reset dispatch state — highWaterMark must survive
+    // Re-register a new service but highWaterMark is still 6
+    registerSprintScheduler(api as never, config);
+    const service2 = (api.registerService as ReturnType<typeof vi.fn>).mock.calls[1][0];
+
+    await service2.start({ logger });
+
+    // Verify regression was detected and restored
+    const restored = await loadSprintState(tmpDir);
+    expect(restored?.current).toBe(6);
+
+    // Verify warning was logged
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("regressed from 6 to 2"),
     );
   });
 });
