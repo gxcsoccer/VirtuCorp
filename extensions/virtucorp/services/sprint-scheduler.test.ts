@@ -242,6 +242,33 @@ describe("buildDigest", () => {
     const digest = buildDigest(baseState(), summary);
     expect(digest?.action).toBe("spawn_dev");
   });
+
+  test("triggers production smoke test when productionUrl option is set", () => {
+    const digest = buildDigest(baseState(), emptySummary(), {
+      productionUrl: "https://alphaarena-eight.vercel.app",
+    });
+    expect(digest?.action).toBe("spawn_qa_smoke");
+    expect(digest?.reason).toContain("smoke test");
+  });
+
+  test("production smoke test has lower priority than P0 bugs", () => {
+    const summary = {
+      ...emptySummary(),
+      p0Bugs: [{ number: 42, title: "Page crash" }],
+    };
+    const digest = buildDigest(baseState(), summary, {
+      productionUrl: "https://alphaarena-eight.vercel.app",
+    });
+    expect(digest?.action).toBe("spawn_dev_bugfix");
+  });
+
+  test("production smoke test has lower priority than open PRs", () => {
+    const summary = { ...emptySummary(), openPRs: 1 };
+    const digest = buildDigest(baseState(), summary, {
+      productionUrl: "https://alphaarena-eight.vercel.app",
+    });
+    expect(digest?.action).toBe("spawn_qa");
+  });
 });
 
 describe("shouldDispatchToCEO", () => {

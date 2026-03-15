@@ -42,3 +42,21 @@ describe("CEO role prompt – heartbeat rules", () => {
     expect(prompt).toMatch(/NEVER add caveats/);
   });
 });
+
+describe("CEO role prompt – production monitoring", () => {
+  let prompt: string;
+
+  beforeAll(async () => {
+    prompt = await fs.readFile(CEO_PROMPT_PATH, "utf-8");
+  });
+
+  test("handles production smoke test dispatch", () => {
+    expect(prompt).toContain("spawn_qa_smoke");
+    expect(prompt).toContain("P0 bug");
+  });
+
+  test("treats investor-reported bugs as highest priority", () => {
+    expect(prompt).toMatch(/[Ii]nvestor.*[Rr]eported.*[Bb]ug/);
+    expect(prompt).toContain("HIGHEST priority");
+  });
+});

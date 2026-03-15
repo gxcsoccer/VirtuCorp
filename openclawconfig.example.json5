@@ -139,6 +139,11 @@
           // Absolute path to your local clone of the target project
           projectDir: "/path/to/your/project",  // ← CHANGE THIS
 
+          // Production URL for automated smoke tests
+          // Scheduler runs UI smoke tests against this URL every 3 ticks
+          // Failures auto-create P0 bug issues
+          productionUrl: "https://your-app.vercel.app",  // ← CHANGE THIS
+
           sprint: {
             durationDays: 1,               // 1 = daily sprints
             autoRetro: true,

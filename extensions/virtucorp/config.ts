@@ -42,9 +42,12 @@ export function resolveConfig(raw: Record<string, unknown> | undefined): VirtuCo
     }
   }
 
+  const productionUrl = raw.productionUrl as string | undefined;
+
   return {
     github,
     projectDir,
+    productionUrl,
     sprint,
     budget: { ...DEFAULT_BUDGET, ...budgetRaw },
     roles: {

@@ -32,6 +32,7 @@ export type BudgetConfig = {
 export type VirtuCorpConfig = {
   github: GitHubConfig;
   projectDir: string;
+  productionUrl?: string;
   sprint: SprintConfig;
   budget: BudgetConfig;
   roles: Record<VirtuCorpRole, RoleConfig>;

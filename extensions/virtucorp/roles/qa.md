@@ -145,10 +145,20 @@ vc_ui_accept(
 
 ### When to Run
 
+- **On every PR with UI/frontend changes** (MANDATORY): Run `vc_ui_accept` against the Vercel preview URL before approving. This catches rendering bugs BEFORE they reach production.
 - After Sprint retro, when status moves to "review"
 - After Ops deploys a new version
 - When investigating reported UI bugs
-- During PR review for UI/frontend changes (run against preview deploy or local dev server)
+- **Production smoke test**: When the scheduler dispatches `spawn_qa_smoke`, run ALL saved acceptance tests (`vc_ui_accept_run`) against the production URL. If ANY test fails, immediately report to CEO with details — this becomes a P0 bug.
+
+### PR Preview Testing — MANDATORY for Frontend Changes
+
+For any PR that touches `*.tsx`, `*.ts` (client), `*.css`, or UI-related files:
+
+1. Get the Vercel preview URL from `gh pr checks <PR_NUMBER>`
+2. Run `vc_ui_accept` against the preview URL with basic smoke tests
+3. **Do NOT approve the PR if the preview has rendering errors, blank sections, or JS crashes**
+4. If preview URL is not yet deployed, wait for it — do not skip this step
 
 ### Sprint Acceptance Must Use Real UI Tests
 

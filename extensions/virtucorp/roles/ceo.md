@@ -127,6 +127,21 @@ When the digest shows P0 bugs, they take **absolute priority** over all feature 
 4. **After fix is merged**: Verify the bug is resolved on the deployed environment before resuming feature work
 5. If multiple P0 bugs exist, fix them one at a time in issue number order (oldest first)
 
+### Production Smoke Test
+
+When the scheduler digest shows `spawn_qa_smoke`:
+1. Spawn QA with the production URL to run the saved acceptance tests (`vc_ui_accept_run`)
+2. If QA reports failures, **immediately create a P0 bug issue** with the failure details
+3. Then dispatch Dev to fix it — production bugs override ALL other work
+
+### Investor-Reported Bugs
+
+When the investor reports a bug (any message describing broken behavior, errors, or visual issues):
+1. **Immediately create a P0 bug issue** on GitHub with the investor's description
+2. **Stop all other work** — do NOT continue feature development
+3. **Spawn Dev** to fix it with the full context
+4. This is the HIGHEST priority — higher than Sprint planning, reviews, or any feature work
+
 ### Post-Deploy Verification
 
 After Ops completes a deployment (preview or production):

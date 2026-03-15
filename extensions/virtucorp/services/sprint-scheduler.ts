@@ -21,6 +21,7 @@ const SPRINT_STATE_FILE = ".virtucorp/sprint.json";
 const CEO_AGENT_ID = "virtucorp-ceo";
 const DISPATCH_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes
 const STALE_SESSION_MAX_MINUTES = 60; // Sessions older than 60 min are likely stale
+const SMOKE_TEST_INTERVAL_TICKS = 3; // Run production smoke test every 3rd tick
 
 // ── Dispatch throttle state (in-memory, resets on restart = immediate first dispatch) ──
 
@@ -31,11 +32,13 @@ type DispatchRecord = {
 
 let lastDispatch: DispatchRecord | null = null;
 let highWaterMark = 0; // Tracks highest sprint number seen, prevents regression
+let tickCount = 0; // Counts ticks for periodic smoke test scheduling
 
 /** @internal Reset dispatch throttle state (for testing only) */
 export function _resetDispatchState() {
   lastDispatch = null;
   highWaterMark = 0;
+  tickCount = 0;
 }
 
 export function computeDigestHash(digest: Digest): string {
@@ -164,8 +167,11 @@ async function tick(
     }
   }
 
+  tickCount++;
+
   // Build a status digest for the CEO to act on
-  const digest = buildDigest(state, summary);
+  const shouldSmoke = config.productionUrl && tickCount % SMOKE_TEST_INTERVAL_TICKS === 0;
+  const digest = buildDigest(state, summary, { productionUrl: shouldSmoke ? config.productionUrl : undefined });
   if (!digest) return;
 
   logger.info(`VirtuCorp scheduler: ${digest.reason}`);
@@ -317,12 +323,16 @@ async function collectGitHubSummary(config: VirtuCorpConfig): Promise<GitHubSumm
 
 type Digest = {
   reason: string;
-  action: "spawn_dev" | "spawn_dev_bugfix" | "spawn_qa" | "spawn_qa_acceptance" | "spawn_pm_retro" | "spawn_pm_plan" | "notify_investor_approval" | "idle";
+  action: "spawn_dev" | "spawn_dev_bugfix" | "spawn_qa" | "spawn_qa_acceptance" | "spawn_qa_smoke" | "spawn_pm_retro" | "spawn_pm_plan" | "notify_investor_approval" | "idle";
   details: GitHubSummary;
   sprintState: SprintState | null;
 };
 
-export function buildDigest(state: SprintState | null, summary: GitHubSummary): Digest | null {
+export type DigestOptions = {
+  productionUrl?: string;
+};
+
+export function buildDigest(state: SprintState | null, summary: GitHubSummary, options: DigestOptions = {}): Digest | null {
   // No sprint yet — needs initialization
   if (!state) {
     return {
@@ -419,6 +429,16 @@ export function buildDigest(state: SprintState | null, summary: GitHubSummary): 
     return {
       reason: `${summary.needsApprovalIssues.length} meta-improvement issue(s) awaiting investor approval: ${issueList}`,
       action: "notify_investor_approval",
+      details: summary,
+      sprintState: state,
+    };
+  }
+
+  // Periodic production smoke test — only when nothing else is actionable
+  if (options.productionUrl) {
+    return {
+      reason: `Production smoke test due. Run UI tests against ${options.productionUrl}`,
+      action: "spawn_qa_smoke",
       details: summary,
       sprintState: state,
     };
