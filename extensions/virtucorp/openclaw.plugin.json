@@ -21,6 +21,10 @@
         "type": "string",
         "description": "Absolute path to the target project's local git checkout"
       },
+      "productionUrl": {
+        "type": "string",
+        "description": "Production URL for automated smoke tests. Scheduler runs UI tests against this URL periodically."
+      },
       "sprint": {
         "type": "object",
         "additionalProperties": false,
