@@ -305,6 +305,7 @@ async function tick(
           logger.info(`VirtuCorp scheduler: emergency direct message to CEO for ${digest.action}`);
           void api.runtime.subagent.run({
             sessionKey: ceoSessionKey,
+            idempotencyKey: `vc-emergency-${digest.action}-${Date.now()}`,
             message: `⚠️ EMERGENCY: Action "${digest.action}" has failed 3+ times. ` +
               `Run \`sessions_list\` now, delete ANY session with label starting with "vc:", ` +
               `then execute: ${actionDetail}`,
