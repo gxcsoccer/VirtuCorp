@@ -93,7 +93,11 @@ export function shouldDispatchToCEO(digest: Digest, last: DispatchRecord | null,
   const hash = computeDigestHash(digest);
   // State changed (new bugs, different action, etc.) → dispatch immediately
   if (hash !== last.digestHash) return true;
-  // Same state → respect cooldown
+  // Emergency mode: if already stuck (3+ attempts), use shorter cooldown (10 min)
+  if (last.consecutiveCount >= 3) {
+    return now - last.timestamp > 10 * 60 * 1000;
+  }
+  // Same state → respect normal cooldown
   return now - last.timestamp > DISPATCH_COOLDOWN_MS;
 }
 
