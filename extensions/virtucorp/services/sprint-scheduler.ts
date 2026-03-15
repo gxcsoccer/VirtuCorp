@@ -295,22 +295,22 @@ async function tick(
           // requestSessionReset may not exist
         }
 
-        // If blocked sessions can't be cleaned (unknown session keys),
-        // try to directly execute the action via subagent.run with an emergency label
-        if (digest.action === "spawn_dev_bugfix" || digest.action === "spawn_dev") {
-          try {
-            const bugInfo = digest.details.p0Bugs.length > 0
-              ? `Fix P0 bug: ${digest.details.p0Bugs.map(b => `#${b.number}: ${b.title}`).join(", ")}`
-              : `Work on ready issues (${digest.details.readyForDev} ready)`;
-            logger.info(`VirtuCorp scheduler: emergency direct spawn for ${digest.action}`);
-            void api.runtime.subagent.run({
-              task: bugInfo,
-              label: `vc:dev:emergency-${Date.now()}`,
-              sessionKey: ceoSessionKey,
-            });
-          } catch {
-            // Emergency spawn failed — will retry next cycle
-          }
+        // Send an emergency message directly to CEO session.
+        // After session reset above, CEO will receive this in a fresh context
+        // with explicit instructions to list sessions, delete stale ones, and retry.
+        try {
+          const actionDetail = digest.details.p0Bugs.length > 0
+            ? `P0 bug: ${digest.details.p0Bugs.map(b => `#${b.number}: ${b.title}`).join(", ")}`
+            : digest.reason;
+          logger.info(`VirtuCorp scheduler: emergency direct message to CEO for ${digest.action}`);
+          void api.runtime.subagent.run({
+            sessionKey: ceoSessionKey,
+            message: `⚠️ EMERGENCY: Action "${digest.action}" has failed 3+ times. ` +
+              `Run \`sessions_list\` now, delete ANY session with label starting with "vc:", ` +
+              `then execute: ${actionDetail}`,
+          });
+        } catch {
+          // Emergency message failed — will retry next cycle
         }
       }
 
