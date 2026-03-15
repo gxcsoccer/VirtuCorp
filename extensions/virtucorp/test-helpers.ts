@@ -79,7 +79,12 @@ export function createMockPluginApi(pluginConfig?: Record<string, unknown>): Moc
     registerContextEngine: vi.fn(),
     registerHook: vi.fn(),
     resolvePath: vi.fn((p: string) => p),
-    runtime: {},
+    runtime: {
+      subagent: {
+        deleteSession: vi.fn().mockResolvedValue(undefined),
+        run: vi.fn().mockResolvedValue({ outcome: "ok" }),
+      },
+    },
     // Test helpers
     _hooks: hooks,
     _tools: tools,

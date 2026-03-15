@@ -268,17 +268,49 @@ async function tick(
         : 1;
 
       // If we've dispatched the same action 3+ times without state change,
-      // CEO is stuck. Reset its session to clear context and retry.
+      // CEO is stuck. Try to force-clean any blocking sessions, then reset CEO.
       if (consecutive >= 3) {
         logger.warn(
-          `VirtuCorp scheduler: CEO stuck on ${digest.action} (${consecutive} consecutive dispatches). Resetting CEO session.`,
+          `VirtuCorp scheduler: CEO stuck on ${digest.action} (${consecutive} consecutive dispatches). Force-cleaning stale sessions.`,
         );
+
+        // Brute-force: try to delete ALL known role sessions by iterating metadata
+        const activeSessions = getActiveSessions();
+        for (const [role, info] of activeSessions) {
+          logger.warn(`VirtuCorp scheduler: force-deleting vc:${role} session ${info.sessionKey} (${info.ageMinutes}min old)`);
+          clearRoleMetadata(info.sessionKey);
+          try {
+            await api.runtime.subagent.deleteSession({ sessionKey: info.sessionKey });
+          } catch {
+            // Session may already be gone
+          }
+        }
+
+        // Also reset CEO session to clear corrupted context
         try {
           await api.runtime.system.requestSessionReset({
             agentId: CEO_AGENT_ID,
           });
         } catch {
-          // requestSessionReset may not exist — fall back to enqueue with reset hint
+          // requestSessionReset may not exist
+        }
+
+        // If blocked sessions can't be cleaned (unknown session keys),
+        // try to directly execute the action via subagent.run with an emergency label
+        if (digest.action === "spawn_dev_bugfix" || digest.action === "spawn_dev") {
+          try {
+            const bugInfo = digest.details.p0Bugs.length > 0
+              ? `Fix P0 bug: ${digest.details.p0Bugs.map(b => `#${b.number}: ${b.title}`).join(", ")}`
+              : `Work on ready issues (${digest.details.readyForDev} ready)`;
+            logger.info(`VirtuCorp scheduler: emergency direct spawn for ${digest.action}`);
+            void api.runtime.subagent.run({
+              task: bugInfo,
+              label: `vc:dev:emergency-${Date.now()}`,
+              sessionKey: ceoSessionKey,
+            });
+          } catch {
+            // Emergency spawn failed — will retry next cycle
+          }
         }
       }
 

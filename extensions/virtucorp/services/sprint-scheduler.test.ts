@@ -322,13 +322,20 @@ describe("shouldDispatchToCEO", () => {
 });
 
 describe("registerSprintScheduler", () => {
-  beforeEach(() => {
+  let tmpProjectDir: string;
+
+  beforeEach(async () => {
     _resetDispatchState();
+    tmpProjectDir = await fs.mkdtemp(path.join(os.tmpdir(), "vc-scheduler-test-"));
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpProjectDir, { recursive: true, force: true });
   });
 
   const baseConfig = {
     github: { owner: "test", repo: "test" },
-    projectDir: "/tmp/test",
+    projectDir: "/tmp/vc-test-placeholder", // overridden per test
     sprint: { durationDays: 14, autoRetro: true, heartbeatMinutes: 60 },
     budget: { dailyLimitUsd: 5, circuitBreakerRetries: 3 },
     roles: { pm: {}, dev: {}, qa: {}, ops: {} },
@@ -336,7 +343,7 @@ describe("registerSprintScheduler", () => {
 
   test("registers a service with correct id", () => {
     const api = createMockPluginApi();
-    registerSprintScheduler(api as never, baseConfig);
+    registerSprintScheduler(api as never, { ...baseConfig, projectDir: tmpProjectDir });
 
     expect(api.registerService).toHaveBeenCalledWith(
       expect.objectContaining({ id: "virtucorp-sprint-scheduler" }),
@@ -365,10 +372,11 @@ describe("registerSprintScheduler", () => {
       },
       subagent: {
         deleteSession: vi.fn().mockResolvedValue(undefined),
+        run: vi.fn().mockResolvedValue({ outcome: "ok" }),
       },
     };
 
-    registerSprintScheduler(api as never, baseConfig);
+    registerSprintScheduler(api as never, { ...baseConfig, projectDir: tmpProjectDir });
 
     // Extract the registered service and call start
     const service = (api.registerService as ReturnType<typeof vi.fn>).mock.calls[0][0];
@@ -401,10 +409,11 @@ describe("registerSprintScheduler", () => {
       },
       subagent: {
         deleteSession: vi.fn().mockResolvedValue(undefined),
+        run: vi.fn().mockResolvedValue({ outcome: "ok" }),
       },
     };
 
-    registerSprintScheduler(api as never, baseConfig);
+    registerSprintScheduler(api as never, { ...baseConfig, projectDir: tmpProjectDir });
 
     const service = (api.registerService as ReturnType<typeof vi.fn>).mock.calls[0][0];
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -431,10 +440,11 @@ describe("registerSprintScheduler", () => {
       },
       subagent: {
         deleteSession: vi.fn().mockResolvedValue(undefined),
+        run: vi.fn().mockResolvedValue({ outcome: "ok" }),
       },
     };
 
-    registerSprintScheduler(api as never, baseConfig);
+    registerSprintScheduler(api as never, { ...baseConfig, projectDir: tmpProjectDir });
 
     const service = (api.registerService as ReturnType<typeof vi.fn>).mock.calls[0][0];
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
