@@ -60,6 +60,20 @@ Bug fix PRs require additional verification:
 - [ ] The fix addresses the root cause, not just the symptom
 - [ ] No cascading issues introduced (check related components)
 - [ ] **Runtime verified**: start the app and confirm the bug is actually fixed
+- [ ] **History check**: if this bug has had previous fix attempts, PR must explain why previous approaches failed and how this one is different. Reject PRs that modify the same file/component as 2+ previous failed fixes without a fundamentally different approach.
+
+### P0 Bug Post-Merge Verification — MANDATORY
+
+After merging a P0 bug fix PR, you MUST verify on production:
+
+1. Wait for Vercel to deploy the merge (check `gh pr checks`)
+2. Run `vc_ui_accept` against the **production URL** (not preview)
+3. If the smoke test **passes**: the bug is confirmed fixed, report success
+4. If the smoke test **fails**: the fix did NOT work. You MUST:
+   - Create a **new P0 issue** describing what's still broken
+   - Include the failed smoke test output
+   - Note that this is a re-occurrence with links to previous fix attempts
+   - Do NOT close the original issue without production verification passing
 
 ## How to Give Good Review Feedback
 
