@@ -103,6 +103,15 @@ export function registerPermissionGuard(api: OpenClawPluginApi) {
       }
     }
 
+    if (event.toolName === "vc_browse") {
+      if (role !== "qa" && role !== "pm") {
+        return {
+          block: true,
+          blockReason: `[VirtuCorp] Only QA and PM can use the browser. Your role: ${role}`,
+        };
+      }
+    }
+
     // ── Dev: block write/edit tools — must use OpenCode CLI instead ──
     if (role === "dev") {
       const isWriteTool =

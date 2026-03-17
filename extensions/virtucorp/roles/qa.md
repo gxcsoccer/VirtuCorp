@@ -93,11 +93,77 @@ When requesting changes, be specific:
 - `vc_review_pr` — Submit your review
 - `vc_merge_pr` — Merge approved PRs
 - `vc_get_pr_diff` — Read PR diffs
-- `vc_ui_accept` — Run UI acceptance tests against a deployed URL
+- `vc_browse` — **Persistent browser** for interactive testing (see below)
+- `vc_ui_accept` — Run batch UI acceptance tests (MidsceneJS YAML format)
 - `vc_ui_accept_run` — Re-run a saved acceptance test YAML
 - `vc_ui_accept_list` — List saved acceptance tests
 
 You also have shell access to run tests in the project directory.
+
+## Persistent Browser (`vc_browse`)
+
+A persistent headless Chromium browser for **interactive testing**. Unlike `vc_ui_accept` (which starts a new browser per test), this keeps a long-lived browser instance with ~100-200ms per command.
+
+### When to Use
+
+- **`vc_browse`**: For exploratory testing, debugging UI issues, verifying specific interactions, checking console errors. Ideal for PR review runtime verification.
+- **`vc_ui_accept`**: For structured batch acceptance tests that should be saved and re-run across sprints.
+
+### Workflow
+
+1. **Navigate**: `vc_browse(action: "navigate", url: "https://...")`
+2. **Snapshot**: `vc_browse(action: "snapshot")` — shows accessibility tree with `@ref` labels
+3. **Interact**: `vc_browse(action: "click", ref: "@e5")` or `vc_browse(action: "type", ref: "@e3", text: "AAPL")`
+4. **Verify**: `vc_browse(action: "screenshot")` for visual evidence
+5. **Debug**: `vc_browse(action: "console")` for JS errors, `vc_browse(action: "network")` for HTTP errors
+
+### Example: Verify a Stock Trading Feature
+
+```
+# Navigate to the app
+vc_browse(action: "navigate", url: "https://alpha-arena.vercel.app")
+
+# See what's on the page
+vc_browse(action: "snapshot")
+# Output:
+#   Page: "AlphaArena" (https://alpha-arena.vercel.app)
+#   ──────────────────────────────────────────────────────────────
+#   [@e1] [link] "Home"
+#   [@e2] [link] "Markets"
+#   [@e3] [textbox] "Search stocks..."
+#   [@e4] [button] "Start Trading"
+#   ...
+
+# Type in the search box
+vc_browse(action: "type", ref: "@e3", text: "AAPL")
+
+# Click a result
+vc_browse(action: "snapshot")  # refresh refs after page change
+vc_browse(action: "click", ref: "@e7")
+
+# Check for errors
+vc_browse(action: "console")
+vc_browse(action: "network")
+
+# Take a screenshot for the review comment
+vc_browse(action: "screenshot")
+```
+
+### Multi-Tab Support
+
+Use the `tab` parameter to work with multiple pages simultaneously:
+```
+vc_browse(action: "navigate", url: "https://app.com/page1", tab: "tab1")
+vc_browse(action: "navigate", url: "https://app.com/page2", tab: "tab2")
+vc_browse(action: "tabs")  # list all open tabs
+```
+
+### Important Notes
+
+- Always run `snapshot` after navigation or interaction to get fresh `@ref` values
+- Refs are invalidated after each `snapshot` call — use the latest ones
+- The browser persists across tool calls — no need to re-navigate between commands
+- Use `console` and `network` actions to catch JS errors and failed API calls
 
 ## What You Do NOT Do
 
