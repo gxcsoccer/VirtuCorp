@@ -16,10 +16,9 @@ import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core";
 import { gh } from "../lib/github-client.js";
 import { getActiveSessions, getStaleSessions, clearRoleMetadata, setRoleMetadata, getRoleMetadata } from "../lib/role-metadata.js";
 import type { SprintState, VirtuCorpConfig, VirtuCorpRole } from "../lib/types.js";
-import { VIRTUCORP_ROLES } from "../lib/types.js";
+import { CEO_AGENT_ID, VIRTUCORP_ROLES } from "../lib/types.js";
 
 const SPRINT_STATE_FILE = ".virtucorp/sprint.json";
-const CEO_AGENT_ID = "virtucorp-ceo";
 const DISPATCH_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes
 const STALE_SESSION_MAX_MINUTES = 60; // Sessions older than 60 min are likely stale
 const SMOKE_TEST_INTERVAL_TICKS = 3; // Run production smoke test every 3rd tick
@@ -35,6 +34,8 @@ type DispatchRecord = {
 type SchedulerPersistState = {
   lastDispatch: DispatchRecord | null;
   highWaterMark: number;
+  paused?: boolean;
+  pauseReason?: string;
 };
 
 const SCHEDULER_STATE_FILE = ".virtucorp/scheduler-state.json";
@@ -43,6 +44,8 @@ let lastDispatch: DispatchRecord | null = null;
 let highWaterMark = 0; // Tracks highest sprint number seen, prevents regression
 let tickCount = 0; // Counts ticks for periodic smoke test scheduling
 let schedulerStatePath: string | null = null;
+let paused = false;
+let pauseReason = "";
 
 async function loadSchedulerState(projectDir: string): Promise<void> {
   schedulerStatePath = join(projectDir, SCHEDULER_STATE_FILE);
@@ -51,6 +54,8 @@ async function loadSchedulerState(projectDir: string): Promise<void> {
     const state = JSON.parse(raw) as SchedulerPersistState;
     lastDispatch = state.lastDispatch;
     highWaterMark = state.highWaterMark ?? 0;
+    paused = state.paused ?? false;
+    pauseReason = state.pauseReason ?? "";
   } catch {
     // No saved state — start fresh
   }
@@ -61,7 +66,7 @@ async function saveSchedulerState(): Promise<void> {
   try {
     const dir = schedulerStatePath.replace(/\/[^/]+$/, "");
     await mkdir(dir, { recursive: true });
-    const state: SchedulerPersistState = { lastDispatch, highWaterMark };
+    const state: SchedulerPersistState = { lastDispatch, highWaterMark, paused, pauseReason };
     await writeFile(schedulerStatePath, JSON.stringify(state, null, 2), "utf-8");
   } catch {
     // Best-effort
@@ -74,6 +79,18 @@ export function _resetDispatchState() {
   highWaterMark = 0;
   tickCount = 0;
   schedulerStatePath = null;
+  paused = false;
+  pauseReason = "";
+}
+
+/** Reset the circuit breaker, allowing dispatch to resume on the next tick. */
+export function resetCircuitBreaker(): void {
+  lastDispatch = lastDispatch
+    ? { ...lastDispatch, consecutiveCount: 0 }
+    : null;
+  paused = false;
+  pauseReason = "";
+  void saveSchedulerState();
 }
 
 export function computeDigestHash(digest: Digest): string {
@@ -247,6 +264,21 @@ async function tick(
 
   logger.info(`VirtuCorp scheduler: ${digest.reason}`);
 
+  // ── Pause check: auto-resume if state changed, otherwise skip ──
+  const currentHash = computeDigestHash(digest);
+  if (paused) {
+    if (lastDispatch && currentHash !== lastDispatch.digestHash) {
+      logger.info(`VirtuCorp scheduler: state changed while paused, auto-resuming`);
+      paused = false;
+      pauseReason = "";
+      lastDispatch = { ...lastDispatch, consecutiveCount: 0 };
+      void saveSchedulerState();
+    } else {
+      logger.info(`VirtuCorp scheduler: paused (${pauseReason}), skipping dispatch`);
+      return;
+    }
+  }
+
   // Dispatch to CEO agent if state warrants it and we haven't recently dispatched the same thing
   if (shouldDispatchToCEO(digest, lastDispatch)) {
     // Build session status info so CEO knows which roles are busy or stale
@@ -271,21 +303,79 @@ async function tick(
     }
 
     try {
-      const currentHash = computeDigestHash(digest);
       const consecutive = lastDispatch && lastDispatch.digestHash === currentHash
         ? lastDispatch.consecutiveCount + 1
         : 1;
 
-      // If we've dispatched the same action 3+ times without state change,
-      // CEO is stuck. Try to force-clean any blocking sessions, then reset CEO.
-      if (consecutive >= 3) {
+      const retries = config.budget.circuitBreakerRetries; // default: 3
+
+      // ── Tiered escalation based on consecutive dispatch count ──
+      if (consecutive >= retries * 3 + 1) {
+        // Tier 3: give up — delete CEO session, send escalation, pause
+        const actionDetail = digest.details.p0Bugs.length > 0
+          ? `P0 bug: ${digest.details.p0Bugs.map(b => `#${b.number}: ${b.title}`).join(", ")}`
+          : digest.reason;
+
         logger.warn(
-          `VirtuCorp scheduler: CEO stuck on ${digest.action} (${consecutive} consecutive dispatches). Force-cleaning stale sessions.`,
+          `VirtuCorp scheduler: circuit breaker OPEN — pausing after ${consecutive} consecutive failures on ${digest.action}`,
         );
 
-        // Brute-force: try to delete ALL known role sessions by iterating metadata
-        const activeSessions = getActiveSessions();
-        for (const [role, info] of activeSessions) {
+        // Delete CEO session to start fresh (critical: without this, escalation can't be delivered)
+        try {
+          await api.runtime.subagent.deleteSession({ sessionKey: ceoSessionKey });
+        } catch {
+          // Session may already be gone
+        }
+
+        // Send escalation to fresh CEO session → will be output to Feishu group via heartbeat
+        const issueLinks = digest.details.p0Bugs.map(b => `#${b.number}`).join(", ");
+        api.runtime.system.enqueueSystemEvent(
+          `[VirtuCorp Scheduler]\n\n🚨 VirtuCorp 需要 Investor 介入\n\n` +
+          `卡住的任务：${actionDetail}\n` +
+          `连续尝试：${consecutive} 次，团队无法自行解决\n` +
+          (issueLinks ? `相关 Issue：${issueLinks}\n\n` : `\n`) +
+          `你可以：\n` +
+          `1. 在群里给 CEO 新指令（换思路、回滚等）\n` +
+          `2. 手动修复后 push，状态变化后自动恢复调度\n` +
+          `3. 降低优先级：gh issue edit #N --remove-label priority/p0\n` +
+          `4. /vc-reset 重置断路器，让团队再试一轮`,
+          { sessionKey: ceoSessionKey },
+        );
+        api.runtime.system.requestHeartbeatNow({
+          reason: "wake",
+          agentId: CEO_AGENT_ID,
+        });
+
+        paused = true;
+        pauseReason = `circuit breaker: ${consecutive} consecutive failures on ${digest.action}`;
+        lastDispatch = {
+          digestHash: currentHash,
+          timestamp: Date.now(),
+          consecutiveCount: consecutive,
+        };
+        void saveSchedulerState();
+        logger.info(`VirtuCorp scheduler: escalation sent, scheduler paused`);
+        return;
+      }
+
+      if (consecutive >= retries * 2) {
+        // Tier 2: force-delete CEO session to clear corrupted context, then dispatch
+        logger.warn(
+          `VirtuCorp scheduler: force-resetting CEO session (${consecutive} consecutive dispatches on ${digest.action})`,
+        );
+        try {
+          await api.runtime.subagent.deleteSession({ sessionKey: ceoSessionKey });
+        } catch {
+          // Session may already be gone
+        }
+      } else if (consecutive >= retries) {
+        // Tier 1: clean stale sessions + request session reset
+        logger.warn(
+          `VirtuCorp scheduler: CEO stuck on ${digest.action} (${consecutive} consecutive dispatches). Cleaning stale sessions.`,
+        );
+
+        const active = getActiveSessions();
+        for (const [role, info] of active) {
           logger.warn(`VirtuCorp scheduler: force-deleting vc:${role} session ${info.sessionKey} (${info.ageMinutes}min old)`);
           clearRoleMetadata(info.sessionKey);
           try {
@@ -295,7 +385,6 @@ async function tick(
           }
         }
 
-        // Also reset CEO session to clear corrupted context
         try {
           await api.runtime.system.requestSessionReset({
             agentId: CEO_AGENT_ID,
@@ -303,32 +392,10 @@ async function tick(
         } catch {
           // requestSessionReset may not exist
         }
-
-        // Send an emergency message directly to CEO session.
-        // After session reset above, CEO will receive this in a fresh context
-        // with explicit instructions to list sessions, delete stale ones, and retry.
-        try {
-          const actionDetail = digest.details.p0Bugs.length > 0
-            ? `P0 bug: ${digest.details.p0Bugs.map(b => `#${b.number}: ${b.title}`).join(", ")}`
-            : digest.reason;
-          logger.info(`VirtuCorp scheduler: emergency direct message to CEO for ${digest.action}`);
-          void api.runtime.subagent.run({
-            sessionKey: ceoSessionKey,
-            idempotencyKey: `vc-emergency-${digest.action}-${Date.now()}`,
-            message: `⚠️ EMERGENCY: Action "${digest.action}" has failed 3+ times due to stale sessions. ` +
-              `Step 1: Run \`sessions_list\` to find sessions with labels starting with "vc:". ` +
-              `Step 2: Run \`sessions_delete\` on each one. ` +
-              `Step 3: Spawn the appropriate role agent via \`sessions_spawn\`. ` +
-              `Task: ${actionDetail}. ` +
-              `IMPORTANT: Do NOT read or modify code yourself — you MUST spawn Dev (vc:dev) for any code work.`,
-          });
-        } catch {
-          // Emergency message failed — will retry next cycle
-        }
       }
 
       // Enqueue event text so it's prepended to CEO's next prompt
-      const urgencyPrefix = consecutive >= 3
+      const urgencyPrefix = consecutive >= retries
         ? "⚠️ URGENT: This action has been dispatched multiple times but not executed. You MUST act on it NOW.\n\n"
         : "";
       api.runtime.system.enqueueSystemEvent(

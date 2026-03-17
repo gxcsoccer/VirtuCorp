@@ -1,7 +1,8 @@
 /**
  * subagent_ended hook: clean up role metadata when a sub-agent finishes.
  *
- * Also logs the outcome for debugging and future budget tracking.
+ * Also deletes the OpenClaw session to free the role label (vc:dev, vc:qa, etc.)
+ * so the CEO can immediately spawn a new sub-agent with the same role.
  */
 
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core";
@@ -24,5 +25,17 @@ export function registerTaskRouter(api: OpenClawPluginApi) {
     }
 
     clearRoleMetadata(sessionKey);
+
+    // Delete the actual OpenClaw session to free the role label.
+    // Without this, the label (e.g. "vc:dev") stays registered and blocks
+    // future spawns with "label already in use".
+    if (outcome !== "deleted") {
+      try {
+        await api.runtime.subagent.deleteSession({ sessionKey });
+        api.logger.info(`VirtuCorp: deleted session ${sessionKey} to free vc:${role} label`);
+      } catch (err) {
+        api.logger.warn(`VirtuCorp: failed to delete session ${sessionKey}: ${err}`);
+      }
+    }
   });
 }

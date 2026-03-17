@@ -11,6 +11,7 @@
 
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core";
 import { getRoleMetadata } from "../lib/role-metadata.js";
+import { CEO_AGENT_ID } from "../lib/types.js";
 
 /** Patterns in shell commands that are restricted to specific roles. */
 const SHELL_DENY_PATTERNS: Array<{ pattern: RegExp; allowedRoles: string[] }> = [
@@ -24,8 +25,6 @@ const PROTECTED_FILE_PATTERNS = [
   /permission-guard\.ts/,
   /permission-guard\.test\.ts/,
 ];
-
-const CEO_AGENT_ID = "virtucorp-ceo";
 
 /** Source code file extensions that CEO must NOT read or modify. */
 const SOURCE_CODE_PATTERN = /\.(tsx?|jsx?|css|scss|vue|svelte|json)$/i;

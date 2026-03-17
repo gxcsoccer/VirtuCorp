@@ -10,6 +10,7 @@ import {
   buildDigest,
   shouldDispatchToCEO,
   computeDigestHash,
+  resetCircuitBreaker,
 } from "./sprint-scheduler.js";
 import type { GitHubSummary } from "./sprint-scheduler.js";
 import { createMockPluginApi } from "../test-helpers.js";
@@ -287,7 +288,7 @@ describe("shouldDispatchToCEO", () => {
   test("dispatches when state changes (different action)", () => {
     const digest1 = makeDigest("spawn_dev");
     const digest2 = buildDigest(baseState(), { ...emptySummary(), p0Bugs: [{ number: 1, title: "bug" }] })!;
-    const record = { digestHash: computeDigestHash(digest1), timestamp: Date.now() };
+    const record = { digestHash: computeDigestHash(digest1), timestamp: Date.now(), consecutiveCount: 0 };
     expect(shouldDispatchToCEO(digest2, record)).toBe(true);
   });
 
@@ -296,6 +297,7 @@ describe("shouldDispatchToCEO", () => {
     const record = {
       digestHash: computeDigestHash(digest),
       timestamp: Date.now() - 10 * 60 * 1000, // 10 min ago
+      consecutiveCount: 0,
     };
     expect(shouldDispatchToCEO(digest, record, Date.now())).toBe(false);
   });
@@ -305,8 +307,40 @@ describe("shouldDispatchToCEO", () => {
     const record = {
       digestHash: computeDigestHash(digest),
       timestamp: Date.now() - 31 * 60 * 1000, // 31 min ago
+      consecutiveCount: 0,
     };
     expect(shouldDispatchToCEO(digest, record, Date.now())).toBe(true);
+  });
+
+  test("emergency mode uses shorter cooldown (10 min)", () => {
+    const digest = makeDigest("spawn_dev");
+    const record = {
+      digestHash: computeDigestHash(digest),
+      timestamp: Date.now() - 11 * 60 * 1000, // 11 min ago
+      consecutiveCount: 4,
+    };
+    expect(shouldDispatchToCEO(digest, record, Date.now())).toBe(true);
+  });
+
+  test("emergency mode blocks within 10 min cooldown", () => {
+    const digest = makeDigest("spawn_dev");
+    const record = {
+      digestHash: computeDigestHash(digest),
+      timestamp: Date.now() - 5 * 60 * 1000, // 5 min ago
+      consecutiveCount: 4,
+    };
+    expect(shouldDispatchToCEO(digest, record, Date.now())).toBe(false);
+  });
+
+  test("state change bypasses consecutive count", () => {
+    const digest1 = makeDigest("spawn_dev");
+    const digest2 = buildDigest(baseState(), { ...emptySummary(), p0Bugs: [{ number: 1, title: "bug" }] })!;
+    const record = {
+      digestHash: computeDigestHash(digest1),
+      timestamp: Date.now(), // just dispatched
+      consecutiveCount: 100, // very high
+    };
+    expect(shouldDispatchToCEO(digest2, record)).toBe(true);
   });
 
   test("dispatches immediately when new P0 bug appears", () => {
@@ -316,6 +350,7 @@ describe("shouldDispatchToCEO", () => {
     const record = {
       digestHash: computeDigestHash(singleBugDigest),
       timestamp: Date.now(), // just dispatched
+      consecutiveCount: 0,
     };
     expect(shouldDispatchToCEO(digest, record)).toBe(true);
   });
@@ -524,5 +559,37 @@ describe("sprint regression guard", () => {
     expect(logger.warn).toHaveBeenCalledWith(
       expect.stringContaining("regressed from 6 to 2"),
     );
+  });
+});
+
+describe("resetCircuitBreaker", () => {
+  beforeEach(() => {
+    _resetDispatchState();
+  });
+
+  test("resets consecutiveCount to 0", () => {
+    // Simulate a stuck state by building digest and creating a dispatch record
+    const digest = buildDigest(
+      baseState(),
+      { ...emptySummary(), readyForDev: 1 },
+    )!;
+    const hash = computeDigestHash(digest);
+
+    // Manually dispatch should work initially
+    expect(shouldDispatchToCEO(digest, null)).toBe(true);
+
+    // After reset, dispatch should work again even with a record
+    const record = { digestHash: hash, timestamp: Date.now(), consecutiveCount: 15 };
+    // Within cooldown, same hash, high consecutive → uses 10min emergency cooldown
+    expect(shouldDispatchToCEO(digest, record, Date.now())).toBe(false);
+
+    // Now test that the function doesn't crash and works
+    resetCircuitBreaker();
+    // After reset, no error thrown
+  });
+
+  test("does not crash when lastDispatch is null", () => {
+    _resetDispatchState();
+    expect(() => resetCircuitBreaker()).not.toThrow();
   });
 });

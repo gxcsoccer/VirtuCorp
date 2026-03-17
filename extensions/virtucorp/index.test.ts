@@ -89,6 +89,18 @@ describe("VirtuCorp plugin", () => {
     );
   });
 
+  test("registers vc-reset command", async () => {
+    const api = createMockPluginApi({
+      github: { owner: "test", repo: "test-repo" },
+      projectDir: "/tmp/test",
+    });
+    await plugin.register(api as never);
+
+    expect(api.registerCommand).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "vc-reset" }),
+    );
+  });
+
   test("throws on missing config", () => {
     const api = createMockPluginApi(undefined);
     // pluginConfig is undefined

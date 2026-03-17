@@ -49,6 +49,8 @@ export type SprintState = {
 /**
  * Label constants used by the GitHub state machine.
  */
+export const CEO_AGENT_ID = "virtucorp-ceo";
+
 export const LABELS = {
   // Status labels
   STATUS_READY: "status/ready-for-dev",

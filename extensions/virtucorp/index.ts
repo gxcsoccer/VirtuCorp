@@ -20,7 +20,7 @@ import { registerRoleInjector } from "./hooks/role-injector.js";
 import { registerTaskRouter } from "./hooks/task-router.js";
 import { registerUsageTracker } from "./hooks/usage-tracker.js";
 import { initProject } from "./services/init.js";
-import { registerSprintScheduler } from "./services/sprint-scheduler.js";
+import { registerSprintScheduler, resetCircuitBreaker } from "./services/sprint-scheduler.js";
 import { registerPRTools } from "./tools/github-prs.js";
 import { registerKnowledgeTools } from "./tools/knowledge.js";
 import { registerUIAcceptanceTools } from "./tools/ui-acceptance.js";
@@ -65,6 +65,16 @@ export default {
       handler: async () => {
         const log = await initProject(config.github, config.projectDir, config.sprint.durationDays);
         return { text: log.join("\n") };
+      },
+    });
+
+    api.registerCommand({
+      name: "vc-reset",
+      description: "Reset VirtuCorp scheduler circuit breaker",
+      requireAuth: true,
+      handler: async () => {
+        resetCircuitBreaker();
+        return { text: "Circuit breaker reset. Dispatching will resume on next tick." };
       },
     });
 

@@ -12,6 +12,7 @@ import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core";
 import { gh } from "../lib/github-client.js";
 import { getRoleMetadata } from "../lib/role-metadata.js";
 import { loadSprintState } from "../services/sprint-scheduler.js";
+import { CEO_AGENT_ID } from "../lib/types.js";
 import type { VirtuCorpConfig } from "../lib/types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -251,8 +252,11 @@ export function registerContextLoader(api: OpenClawPluginApi, config: VirtuCorpC
     }
 
     // CEO session (main agent, no role metadata):
-    // inject CEO prompt + live GitHub digest
-    if (ctx.trigger === "heartbeat" || ctx.trigger === "user") {
+    // inject CEO prompt + live GitHub digest.
+    // IMPORTANT: Only match sessions with "virtucorp-ceo" in the key —
+    // otherwise private chat sessions get CEO prompts injected.
+    const isCeoSession = ctx.sessionKey?.includes(CEO_AGENT_ID);
+    if (isCeoSession && (ctx.trigger === "heartbeat" || ctx.trigger === "user")) {
       const ceoPrompt = await loadRolePrompt("ceo");
       const digest = await buildCEODigest(config);
       return {

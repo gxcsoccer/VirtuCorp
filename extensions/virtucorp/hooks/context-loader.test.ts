@@ -100,7 +100,7 @@ describe("context-loader hook", () => {
 
   test("injects CEO prompt and live digest for heartbeat trigger", async () => {
     const event = { prompt: "heartbeat", messages: [] };
-    const ctx = { ...makeAgentContext({ sessionKey: "ceo-session" }), trigger: "heartbeat" };
+    const ctx = { ...makeAgentContext({ sessionKey: "agent:virtucorp-ceo:main" }), trigger: "heartbeat" };
     const result = await api._callHook("before_prompt_build", event, ctx) as {
       prependSystemContext: string;
       prependContext: string;
@@ -114,7 +114,7 @@ describe("context-loader hook", () => {
 
   test("injects CEO context for user-triggered messages", async () => {
     const event = { prompt: "what should we do?", messages: [] };
-    const ctx = { ...makeAgentContext({ sessionKey: "ceo-session" }), trigger: "user" };
+    const ctx = { ...makeAgentContext({ sessionKey: "agent:virtucorp-ceo:feishu-group-123" }), trigger: "user" };
     const result = await api._callHook("before_prompt_build", event, ctx) as {
       prependSystemContext: string;
       prependContext: string;
@@ -123,6 +123,13 @@ describe("context-loader hook", () => {
     expect(result).toBeDefined();
     expect(result.prependSystemContext).toContain("CEO");
     expect(result.prependContext).toContain("Current Situation");
+  });
+
+  test("does NOT inject CEO context into private chat sessions", async () => {
+    const event = { prompt: "hello", messages: [] };
+    const ctx = { ...makeAgentContext({ sessionKey: "agent:default:feishu-private-456" }), trigger: "user" };
+    const result = await api._callHook("before_prompt_build", event, ctx);
+    expect(result).toBeUndefined();
   });
 
   test("returns undefined for unknown trigger without role", async () => {
