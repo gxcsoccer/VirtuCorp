@@ -20,11 +20,14 @@ import { initPersistence } from "./lib/role-metadata.js";
 import { registerRoleInjector } from "./hooks/role-injector.js";
 import { registerTaskRouter } from "./hooks/task-router.js";
 import { registerUsageTracker } from "./hooks/usage-tracker.js";
+import { registerModificationTracker } from "./hooks/modification-tracker.js";
 import { initProject } from "./services/init.js";
 import { registerSprintScheduler, resetCircuitBreaker } from "./services/sprint-scheduler.js";
 import { registerPRTools } from "./tools/github-prs.js";
 import { registerKnowledgeTools } from "./tools/knowledge.js";
+import { registerBrowserTools } from "./tools/browser.js";
 import { registerUIAcceptanceTools } from "./tools/ui-acceptance.js";
+import { shutdownBrowserManager } from "./lib/browser-manager.js";
 
 export default {
   id: "virtucorp",
@@ -46,6 +49,7 @@ export default {
     registerPRTools(api, config.github);            // gated: review + merge
     registerKnowledgeTools(api, config.projectDir); // shared: save + search + list
     registerUIAcceptanceTools(api, config.projectDir); // gated: UI acceptance (QA + PM)
+    registerBrowserTools(api);                          // gated: persistent browser (QA + PM)
 
     // ── Hooks ──────────────────────────────────────────────
     registerRoleInjector(api);
@@ -55,9 +59,22 @@ export default {
     registerSpawnCleanup(api);
     registerTaskRouter(api);
     registerUsageTracker(api, config.budget);
+    registerModificationTracker(api, config.projectDir);
 
     // ── Services ───────────────────────────────────────────
     registerSprintScheduler(api, config);
+
+    // Browser daemon lifecycle — clean shutdown on plugin stop
+    api.registerService({
+      id: "virtucorp-browser-daemon",
+      async start(ctx) {
+        ctx.logger.info("VirtuCorp browser daemon: ready (lazy init on first use)");
+      },
+      async stop(ctx) {
+        await shutdownBrowserManager();
+        ctx.logger.info("VirtuCorp browser daemon: stopped");
+      },
+    });
 
     // ── CLI Commands ───────────────────────────────────────
     api.registerCommand({

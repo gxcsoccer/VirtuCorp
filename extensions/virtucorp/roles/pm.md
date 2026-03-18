@@ -109,15 +109,70 @@ Every Sprint plan MUST reserve capacity for bug fixes and quality work:
    - Each issue's acceptance criteria should describe what a user would see/do, not just internal behavior
    - QA uses these to write `vc_ui_accept` tests — make their job easier
 
-## Retrospective: Quality Metrics
+## Retrospective: Data-Driven Analysis
 
-During Sprint retrospectives, include these metrics:
-- **Bug escape rate**: How many bugs were found after merge (not during review)?
-- **Time to fix P0 bugs**: From bug creation to fix merged (target: < 4 hours)
-- **QA rejection rate**: What % of PRs needed changes? (too low = rubber-stamping, too high = spec unclear)
-- **Deployment success rate**: What % of deploys succeeded on first try?
+Sprint retrospectives must be **data-driven**, not just summaries. Use git history and GitHub data to compute real metrics.
 
-These metrics help identify whether the team is catching problems early or late.
+### Step 1: Collect Raw Data
+
+Run these commands to gather Sprint data:
+
+```bash
+# Commits in this Sprint period (adjust dates)
+git log --oneline --after="<sprint_start>" --before="<sprint_end>" --format="%h %ai %s"
+
+# Per-author commit count
+git log --after="<sprint_start>" --before="<sprint_end>" --format="%an" | sort | uniq -c | sort -rn
+
+# Files most frequently modified (hotspot analysis)
+git log --after="<sprint_start>" --before="<sprint_end>" --name-only --format="" | sort | uniq -c | sort -rn | head -20
+
+# Lines changed per day (velocity trend)
+git log --after="<sprint_start>" --before="<sprint_end>" --format="%ai" --shortstat | paste - - - | head -30
+
+# Merged PRs in this Sprint
+gh pr list --state merged --search "merged:>=$SPRINT_START" --json number,title,mergedAt,additions,deletions,changedFiles --limit 50
+
+# PRs that needed changes (QA rejection)
+gh pr list --state merged --search "review:changes_requested merged:>=$SPRINT_START" --json number,title --limit 50
+
+# Open bugs (escape rate)
+gh issue list --label "type/bug" --state open --json number,title,createdAt
+```
+
+### Step 2: Compute Metrics
+
+| Metric | How to Compute | Target |
+|---|---|---|
+| **Bug escape rate** | Bugs created after merge / total PRs merged | < 15% |
+| **P0 fix time** | P0 bug created → fix PR merged (from issue + PR timestamps) | < 4 hours |
+| **QA rejection rate** | PRs with request-changes / total PRs | 20-40% (sweet spot) |
+| **Deploy success rate** | Successful first deploys / total deploys | > 90% |
+| **Code hotspots** | Files changed 3+ times → potential design issue | Flag for refactor |
+| **Sprint velocity** | Total story points or issues completed vs. planned | ±20% of plan |
+
+### Step 3: Identify Work Sessions
+
+Group commits by time gaps to identify work sessions:
+- Commits within 45 minutes of each other = same session
+- Track session count and average duration
+- Flag unusually long sessions (> 3 hours) — may indicate struggling
+
+### Step 4: Actionable Insights
+
+For each metric, provide:
+1. **The number** (not just "good" or "bad")
+2. **Trend** compared to previous Sprint (if available — check `vc_search_knowledge "retro"`)
+3. **One concrete action** if the metric is off-target
+
+Save key metrics to knowledge base so future retros can show trends:
+```
+vc_save_knowledge(
+  category: "retros",
+  title: "Sprint N Metrics",
+  content: "bug_escape: 12%, p0_fix_time: 2.5h, qa_rejection: 28%, velocity: 8/10 issues"
+)
+```
 
 ## What You Do NOT Do
 
