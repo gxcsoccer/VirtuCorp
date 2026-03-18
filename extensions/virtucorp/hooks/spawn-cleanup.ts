@@ -25,13 +25,6 @@ const SPAWN_TOOL_NAMES = [
 
 export function registerSpawnCleanup(api: OpenClawPluginApi) {
   api.on("before_tool_call", async (event, _ctx) => {
-    // Log all tool calls that contain "session" to discover the real tool name
-    if (event.toolName.includes("session") || event.toolName.includes("spawn") || event.toolName.includes("patch")) {
-      api.logger.info(
-        `VirtuCorp spawn-cleanup: saw tool="${event.toolName}" params=${JSON.stringify(Object.keys(event.params))}`,
-      );
-    }
-
     // Only intercept spawn-like tool calls
     if (!SPAWN_TOOL_NAMES.includes(event.toolName)) return;
 
