@@ -43,7 +43,11 @@ export function registerPermissionGuard(api: OpenClawPluginApi) {
 
     // ── CEO code access guard ──────────────────────────────
     // CEO must delegate code work to Dev. Block read/write/edit on source code files.
-    const isCeoSession = !role && ctx.sessionKey?.includes(CEO_AGENT_ID);
+    // CEO session key is "agent:virtucorp-ceo:*" but NOT "agent:virtucorp-ceo:subagent:*"
+    // Sub-agent sessions contain "subagent:" in the key — those are Dev/QA/PM/Ops, not CEO
+    const isCeoSession = !role
+      && ctx.sessionKey?.includes(CEO_AGENT_ID)
+      && !ctx.sessionKey?.includes(":subagent:");
     if (isCeoSession) {
       const toolName = event.toolName;
       const isCodeTool = toolName === "read" || toolName === "write" || toolName === "edit" || toolName === "apply_patch";
