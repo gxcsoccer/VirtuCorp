@@ -264,18 +264,46 @@ async function tick(
 
   logger.info(`VirtuCorp scheduler: ${digest.reason}`);
 
-  // ── Pause check: auto-resume if state changed, otherwise skip ──
+  // ── Pause check: auto-resume if state changed OR cooldown expired ──
   const currentHash = computeDigestHash(digest);
   if (paused) {
+    const pausedDuration = lastDispatch ? Date.now() - lastDispatch.timestamp : 0;
     if (lastDispatch && currentHash !== lastDispatch.digestHash) {
       logger.info(`VirtuCorp scheduler: state changed while paused, auto-resuming`);
       paused = false;
       pauseReason = "";
       lastDispatch = { ...lastDispatch, consecutiveCount: 0 };
       void saveSchedulerState();
+    } else if (pausedDuration > 30 * 60 * 1000) {
+      // Auto-resume after 30 min — permanent pause is worse than retrying
+      logger.info(`VirtuCorp scheduler: paused for ${Math.round(pausedDuration / 60000)}min, auto-resuming`);
+      paused = false;
+      pauseReason = "";
+      lastDispatch = lastDispatch ? { ...lastDispatch, consecutiveCount: 0 } : null;
+      void saveSchedulerState();
     } else {
       logger.info(`VirtuCorp scheduler: paused (${pauseReason}), skipping dispatch`);
       return;
+    }
+  }
+
+  // ── Proactive session cleanup before dispatch ──
+  // Before asking CEO to spawn a role, delete any tracked session for that role.
+  // This prevents "label already in use" errors for known zombie sessions.
+  const targetRole = extractTargetRole(digest.action);
+  if (targetRole) {
+    const activeSessions = getActiveSessions();
+    const existing = activeSessions.get(targetRole);
+    if (existing) {
+      logger.warn(
+        `VirtuCorp scheduler: proactive cleanup of vc:${targetRole} (${existing.sessionKey}, ${existing.ageMinutes}min old)`,
+      );
+      clearRoleMetadata(existing.sessionKey);
+      try {
+        await api.runtime.subagent.deleteSession({ sessionKey: existing.sessionKey });
+      } catch {
+        // Session may already be gone
+      }
     }
   }
 
@@ -530,6 +558,15 @@ type Digest = {
 export type DigestOptions = {
   productionUrl?: string;
 };
+
+/** Map digest action to the VirtuCorp role that will be spawned. */
+function extractTargetRole(action: string): VirtuCorpRole | null {
+  if (action.startsWith("spawn_dev")) return "dev";
+  if (action.startsWith("spawn_qa")) return "qa";
+  if (action.startsWith("spawn_pm")) return "pm";
+  if (action.startsWith("spawn_ops")) return "ops";
+  return null;
+}
 
 export function buildDigest(state: SprintState | null, summary: GitHubSummary, options: DigestOptions = {}): Digest | null {
   // No sprint yet — needs initialization
