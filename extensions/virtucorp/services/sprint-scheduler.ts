@@ -110,8 +110,10 @@ export function shouldDispatchToCEO(digest: Digest, last: DispatchRecord | null,
   const hash = computeDigestHash(digest);
   // State changed (new bugs, different action, etc.) → dispatch immediately
   if (hash !== last.digestHash) return true;
-  // Emergency mode: if already stuck (3+ attempts), use shorter cooldown (10 min)
-  if (last.consecutiveCount >= 3) {
+  // Emergency mode: if already stuck (3+ attempts) AND there are P0 bugs,
+  // use shorter cooldown (10 min). Non-P0 actions (e.g. spawn_pm_plan from
+  // completed status) keep the normal 30-min cooldown to avoid over-escalation.
+  if (last.consecutiveCount >= 3 && digest.details.p0Bugs.length > 0) {
     return now - last.timestamp > 10 * 60 * 1000;
   }
   // Same state → respect normal cooldown
@@ -254,11 +256,23 @@ async function tick(
 
   // Build a status digest for the CEO to act on.
   // First try without smoke test to see if there's higher-priority work.
-  // If nothing actionable and productionUrl is configured, run smoke test.
-  // This ensures production health is checked whenever the system is idle.
+  // If nothing actionable and productionUrl is configured, run smoke test —
+  // but only every SMOKE_TEST_INTERVAL_TICKS ticks, and skip if the last
+  // dispatch was already a smoke test with the same state (i.e. it passed).
   let digest = buildDigest(state, summary);
   if (!digest && config.productionUrl) {
-    digest = buildDigest(state, summary, { productionUrl: config.productionUrl });
+    if (tickCount % SMOKE_TEST_INTERVAL_TICKS === 0) {
+      const candidate = buildDigest(state, summary, { productionUrl: config.productionUrl });
+      if (candidate) {
+        // Skip re-dispatch if last dispatch was this exact smoke test (test passed, state unchanged)
+        const candidateHash = computeDigestHash(candidate);
+        if (lastDispatch && lastDispatch.digestHash === candidateHash) {
+          logger.info("VirtuCorp scheduler: smoke test already dispatched and state unchanged, skipping");
+        } else {
+          digest = candidate;
+        }
+      }
+    }
   }
   if (!digest) return;
 

@@ -312,8 +312,9 @@ describe("shouldDispatchToCEO", () => {
     expect(shouldDispatchToCEO(digest, record, Date.now())).toBe(true);
   });
 
-  test("emergency mode uses shorter cooldown (10 min)", () => {
-    const digest = makeDigest("spawn_dev");
+  test("emergency mode uses shorter cooldown (10 min) for P0 bugs", () => {
+    const p0Bugs = [{ number: 1, title: "bug" }];
+    const digest = buildDigest(baseState(), { ...emptySummary(), p0Bugs })!;
     const record = {
       digestHash: computeDigestHash(digest),
       timestamp: Date.now() - 11 * 60 * 1000, // 11 min ago
@@ -322,14 +323,38 @@ describe("shouldDispatchToCEO", () => {
     expect(shouldDispatchToCEO(digest, record, Date.now())).toBe(true);
   });
 
-  test("emergency mode blocks within 10 min cooldown", () => {
-    const digest = makeDigest("spawn_dev");
+  test("emergency mode blocks P0 within 10 min cooldown", () => {
+    const p0Bugs = [{ number: 1, title: "bug" }];
+    const digest = buildDigest(baseState(), { ...emptySummary(), p0Bugs })!;
     const record = {
       digestHash: computeDigestHash(digest),
       timestamp: Date.now() - 5 * 60 * 1000, // 5 min ago
       consecutiveCount: 4,
     };
     expect(shouldDispatchToCEO(digest, record, Date.now())).toBe(false);
+  });
+
+  test("non-P0 actions use normal 30min cooldown even when consecutiveCount >= 3", () => {
+    // spawn_pm_plan from completed status (no P0 bugs)
+    const digest = makeDigest("spawn_pm_plan");
+    const record = {
+      digestHash: computeDigestHash(digest),
+      timestamp: Date.now() - 11 * 60 * 1000, // 11 min ago — within 30min but past 10min
+      consecutiveCount: 4,
+    };
+    // Without the fix this would be true (emergency 10min cooldown)
+    // With the fix: no P0 bugs → normal 30min cooldown → still blocked
+    expect(shouldDispatchToCEO(digest, record, Date.now())).toBe(false);
+  });
+
+  test("non-P0 actions dispatch after normal 30min cooldown even at high consecutiveCount", () => {
+    const digest = makeDigest("spawn_pm_plan");
+    const record = {
+      digestHash: computeDigestHash(digest),
+      timestamp: Date.now() - 31 * 60 * 1000, // 31 min ago
+      consecutiveCount: 4,
+    };
+    expect(shouldDispatchToCEO(digest, record, Date.now())).toBe(true);
   });
 
   test("state change bypasses consecutive count", () => {
@@ -488,6 +513,116 @@ describe("registerSprintScheduler", () => {
     expect(enqueueSystemEvent).toHaveBeenCalledWith(
       expect.stringContaining("[VirtuCorp Scheduler]"),
       { sessionKey: "agent:virtucorp-ceo:main" },
+    );
+  });
+});
+
+describe("smoke test dedup and tick gating", () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    _resetDispatchState();
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "vc-smoke-test-"));
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  function makeMockApi() {
+    const enqueueSystemEvent = vi.fn();
+    const requestHeartbeatNow = vi.fn();
+    const api = createMockPluginApi();
+    api.runtime = {
+      config: { loadConfig: () => ({ agents: { list: [] } }) },
+      system: { enqueueSystemEvent, requestHeartbeatNow },
+      subagent: { deleteSession: vi.fn().mockResolvedValue(undefined) },
+    };
+    return { api, enqueueSystemEvent };
+  }
+
+  // Config with productionUrl and sprint in "executing" state with no GitHub work
+  // This triggers the smoke test path
+  function makeIdleConfig(projectDir: string) {
+    return {
+      github: { owner: "test", repo: "test" },
+      projectDir,
+      productionUrl: "https://example.com",
+      sprint: { durationDays: 14, autoRetro: true, heartbeatMinutes: 60 },
+      budget: { dailyLimitUsd: 5, circuitBreakerRetries: 3 },
+      roles: { pm: {}, dev: {}, qa: {}, ops: {} },
+    };
+  }
+
+  test("smoke test dispatches on first tick (tickCount=1, after increment, mod 3 !== 0 but tickCount starts at 0+1=1)", async () => {
+    // Save a sprint in executing state with future end date so it's not expired
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    await saveSprintState(tmpDir, {
+      current: 1, startDate: "2026-03-01", endDate: tomorrow.toISOString().split("T")[0],
+      milestone: null, status: "executing",
+    });
+
+    const { api, enqueueSystemEvent } = makeMockApi();
+    const config = makeIdleConfig(tmpDir);
+
+    registerSprintScheduler(api as never, config);
+    const service = (api.registerService as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+    // First tick: tickCount becomes 1 after increment. 1 % 3 !== 0 → no smoke test
+    await service.start({ logger });
+
+    // Should NOT dispatch smoke test on tick 1
+    const smokeDispatches = enqueueSystemEvent.mock.calls.filter(
+      (call: unknown[]) => (call[0] as string).includes("smoke test"),
+    );
+    expect(smokeDispatches).toHaveLength(0);
+  });
+
+  test("smoke test does not re-dispatch if state unchanged (test passed)", async () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    await saveSprintState(tmpDir, {
+      current: 1, startDate: "2026-03-01", endDate: tomorrow.toISOString().split("T")[0],
+      milestone: null, status: "executing",
+    });
+
+    const { api, enqueueSystemEvent } = makeMockApi();
+    const config = makeIdleConfig(tmpDir);
+
+    registerSprintScheduler(api as never, config);
+    const service = (api.registerService as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+    // Run 7 ticks manually to hit tickCount % 3 === 0 at least twice
+    // Tick 1: tickCount=1, 1%3≠0 → skip
+    // Tick 2: tickCount=2, 2%3≠0 → skip
+    // Tick 3: tickCount=3, 3%3=0 → dispatches smoke test
+    // Tick 4: tickCount=4, 4%3≠0 → skip
+    // Tick 5: tickCount=5, 5%3≠0 → skip
+    // Tick 6: tickCount=6, 6%3=0 → would dispatch but hash unchanged → dedup skip
+    await service.start({ logger }); // tick 1
+    await service.stop({ logger });
+
+    // Run more ticks by re-registering (we don't reset dispatch state so lastDispatch persists)
+    for (let i = 2; i <= 6; i++) {
+      registerSprintScheduler(api as never, config);
+      const svc = (api.registerService as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0];
+      await svc.start({ logger });
+      await svc.stop({ logger });
+    }
+
+    // Count smoke test dispatches
+    const smokeDispatches = enqueueSystemEvent.mock.calls.filter(
+      (call: unknown[]) => (call[0] as string).includes("smoke test"),
+    );
+    // Only tick 3 should dispatch; tick 6 should be deduped
+    expect(smokeDispatches).toHaveLength(1);
+
+    // Verify dedup log message appeared
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.stringContaining("smoke test already dispatched and state unchanged"),
     );
   });
 });
