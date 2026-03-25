@@ -484,10 +484,51 @@ async function tick(
 export async function loadSprintState(projectDir: string): Promise<SprintState | null> {
   try {
     const raw = await readFile(join(projectDir, SPRINT_STATE_FILE), "utf-8");
-    return JSON.parse(raw) as SprintState;
+    const data = JSON.parse(raw);
+    return normalizeSprintState(data);
   } catch {
     return null;
   }
+}
+
+/**
+ * Normalize sprint.json into the canonical SprintState shape.
+ *
+ * PM agents write a nested format: `{ sprint: { number, status, period: { start, end }, milestone } }`.
+ * The scheduler expects the flat format: `{ current, status, startDate, endDate, milestone }`.
+ * This function accepts both and returns the flat format, or null if unrecognizable.
+ */
+export function normalizeSprintState(data: unknown): SprintState | null {
+  if (!data || typeof data !== "object") return null;
+
+  const record = data as Record<string, unknown>;
+
+  // Flat format (canonical): { current, status, startDate, endDate }
+  if (typeof record.current === "number" && typeof record.status === "string") {
+    return data as SprintState;
+  }
+
+  // Nested format (PM-written): { sprint: { number, status, period: { start, end } } }
+  const sprint = record.sprint as Record<string, unknown> | undefined;
+  if (!sprint || typeof sprint !== "object") return null;
+
+  const number = sprint.number;
+  const status = sprint.status;
+  const period = sprint.period as Record<string, unknown> | undefined;
+  const milestone = sprint.milestone;
+
+  if (typeof number !== "number" || typeof status !== "string") return null;
+
+  const validStatuses = ["planning", "executing", "retro", "review", "completed"];
+  if (!validStatuses.includes(status)) return null;
+
+  return {
+    current: number,
+    startDate: period && typeof period.start === "string" ? period.start : "",
+    endDate: period && typeof period.end === "string" ? period.end : "",
+    milestone: typeof milestone === "number" ? milestone : null,
+    status: status as SprintState["status"],
+  };
 }
 
 export async function saveSprintState(projectDir: string, state: SprintState): Promise<void> {

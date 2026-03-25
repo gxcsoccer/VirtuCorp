@@ -11,6 +11,7 @@ import {
   shouldDispatchToCEO,
   computeDigestHash,
   resetCircuitBreaker,
+  normalizeSprintState,
 } from "./sprint-scheduler.js";
 import type { GitHubSummary } from "./sprint-scheduler.js";
 import { createMockPluginApi } from "../test-helpers.js";
@@ -57,6 +58,73 @@ describe("sprint state persistence", () => {
     await saveSprintState(tmpDir, state);
     const stat = await fs.stat(path.join(tmpDir, ".virtucorp"));
     expect(stat.isDirectory()).toBe(true);
+  });
+
+  test("loads nested PM-written sprint.json format correctly", async () => {
+    const nested = {
+      sprint: {
+        number: 49,
+        title: "Sprint 49: 国际化",
+        milestone: 50,
+        status: "completed",
+        period: { start: "2026-03-24", end: "2026-03-30" },
+        goals: "i18n",
+        issues: { planned: [], total: 0, completed: 0 },
+      },
+    };
+    const dir = path.join(tmpDir, ".virtucorp");
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, "sprint.json"), JSON.stringify(nested));
+
+    const state = await loadSprintState(tmpDir);
+    expect(state).not.toBeNull();
+    expect(state!.current).toBe(49);
+    expect(state!.status).toBe("completed");
+    expect(state!.startDate).toBe("2026-03-24");
+    expect(state!.endDate).toBe("2026-03-30");
+    expect(state!.milestone).toBe(50);
+  });
+});
+
+describe("normalizeSprintState", () => {
+  test("passes through flat canonical format", () => {
+    const flat = { current: 5, startDate: "2026-03-01", endDate: "2026-03-14", milestone: 6, status: "executing" };
+    const result = normalizeSprintState(flat);
+    expect(result).toEqual(flat);
+  });
+
+  test("converts nested PM format to flat format", () => {
+    const nested = {
+      sprint: {
+        number: 49, milestone: 50, status: "completed",
+        period: { start: "2026-03-24", end: "2026-03-30" },
+      },
+    };
+    const result = normalizeSprintState(nested);
+    expect(result).toEqual({
+      current: 49, startDate: "2026-03-24", endDate: "2026-03-30",
+      milestone: 50, status: "completed",
+    });
+  });
+
+  test("returns null for garbage data", () => {
+    expect(normalizeSprintState(null)).toBeNull();
+    expect(normalizeSprintState("string")).toBeNull();
+    expect(normalizeSprintState({ foo: "bar" })).toBeNull();
+    expect(normalizeSprintState({ sprint: "not-object" })).toBeNull();
+  });
+
+  test("returns null for invalid status", () => {
+    const bad = { sprint: { number: 1, status: "unknown", period: { start: "a", end: "b" } } };
+    expect(normalizeSprintState(bad)).toBeNull();
+  });
+
+  test("handles missing period gracefully", () => {
+    const noPeriod = { sprint: { number: 1, status: "planning" } };
+    const result = normalizeSprintState(noPeriod);
+    expect(result).toEqual({
+      current: 1, startDate: "", endDate: "", milestone: null, status: "planning",
+    });
   });
 });
 
