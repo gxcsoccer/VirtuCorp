@@ -624,7 +624,113 @@ describe("smoke test dedup and tick gating", () => {
     expect(logger.info).toHaveBeenCalledWith(
       expect.stringContaining("smoke test already dispatched and state unchanged"),
     );
+  }, 15000);
+
+  test("smoke test re-dispatches after dedup TTL expires (2 hours)", async () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    await saveSprintState(tmpDir, {
+      current: 1, startDate: "2026-03-01", endDate: tomorrow.toISOString().split("T")[0],
+      milestone: null, status: "executing",
+    });
+
+    const { api, enqueueSystemEvent } = makeMockApi();
+    const config = makeIdleConfig(tmpDir);
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+    // Run ticks 1-3: tick 3 dispatches the first smoke test
+    for (let i = 1; i <= 3; i++) {
+      registerSprintScheduler(api as never, config);
+      const svc = (api.registerService as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0];
+      await svc.start({ logger });
+      await svc.stop({ logger });
+    }
+
+    const dispatchesBeforeTTL = enqueueSystemEvent.mock.calls.filter(
+      (call: unknown[]) => (call[0] as string).includes("smoke test"),
+    );
+    expect(dispatchesBeforeTTL).toHaveLength(1);
+
+    // Mock Date.now to jump 2h+1ms into the future so dedup TTL expires
+    const realNow = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(realNow + 2 * 60 * 60 * 1000 + 1);
+
+    try {
+      // Run ticks 4-6: tick 6 should re-dispatch because TTL expired
+      for (let i = 4; i <= 6; i++) {
+        registerSprintScheduler(api as never, config);
+        const svc = (api.registerService as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0];
+        await svc.start({ logger });
+        await svc.stop({ logger });
+      }
+    } finally {
+      vi.restoreAllMocks();
+    }
+
+    const dispatchesAfterTTL = enqueueSystemEvent.mock.calls.filter(
+      (call: unknown[]) => (call[0] as string).includes("smoke test"),
+    );
+    expect(dispatchesAfterTTL).toHaveLength(2);
+  }, 15000);
+});
+
+describe("idle watchdog", () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    _resetDispatchState();
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "vc-idle-test-"));
   });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  function makeMockApi() {
+    const enqueueSystemEvent = vi.fn();
+    const requestHeartbeatNow = vi.fn();
+    const api = createMockPluginApi();
+    api.runtime = {
+      config: { loadConfig: () => ({ agents: { list: [] } }) },
+      system: { enqueueSystemEvent, requestHeartbeatNow },
+      subagent: { deleteSession: vi.fn().mockResolvedValue(undefined) },
+    };
+    return { api, enqueueSystemEvent };
+  }
+
+  test("warns after 10 consecutive idle ticks", async () => {
+    // Sprint in executing state, no work, no productionUrl → every tick is idle
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    await saveSprintState(tmpDir, {
+      current: 1, startDate: "2026-03-01", endDate: tomorrow.toISOString().split("T")[0],
+      milestone: null, status: "executing",
+    });
+
+    const { api } = makeMockApi();
+    const config = {
+      github: { owner: "test", repo: "test" },
+      projectDir: tmpDir,
+      // No productionUrl → no smoke test fallback → truly idle
+      sprint: { durationDays: 14, autoRetro: true, heartbeatMinutes: 60 },
+      budget: { dailyLimitUsd: 5, circuitBreakerRetries: 3 },
+      roles: { pm: {}, dev: {}, qa: {}, ops: {} },
+    };
+
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+    // Run 11 ticks — should see idle warning starting at tick 10
+    for (let i = 0; i < 11; i++) {
+      registerSprintScheduler(api as never, config);
+      const svc = (api.registerService as ReturnType<typeof vi.fn>).mock.calls.at(-1)![0];
+      await svc.start({ logger });
+      await svc.stop({ logger });
+    }
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("consecutive idle ticks"),
+    );
+  }, 30000);
 });
 
 describe("sprint regression guard", () => {

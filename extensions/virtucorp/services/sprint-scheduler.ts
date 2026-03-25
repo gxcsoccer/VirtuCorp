@@ -22,6 +22,8 @@ const SPRINT_STATE_FILE = ".virtucorp/sprint.json";
 const DISPATCH_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes
 const STALE_SESSION_MAX_MINUTES = 60; // Sessions older than 60 min are likely stale
 const SMOKE_TEST_INTERVAL_TICKS = 3; // Run production smoke test every 3rd tick
+const SMOKE_TEST_DEDUP_TTL_MS = 2 * 60 * 60 * 1000; // Re-run smoke test after 2h even if state unchanged
+const IDLE_WARNING_THRESHOLD = 10; // Warn after this many consecutive no-dispatch ticks
 
 // ── Dispatch throttle state (persisted to survive restarts) ──
 
@@ -46,6 +48,7 @@ let tickCount = 0; // Counts ticks for periodic smoke test scheduling
 let schedulerStatePath: string | null = null;
 let paused = false;
 let pauseReason = "";
+let consecutiveIdleTicks = 0;
 
 async function loadSchedulerState(projectDir: string): Promise<void> {
   schedulerStatePath = join(projectDir, SCHEDULER_STATE_FILE);
@@ -81,6 +84,7 @@ export function _resetDispatchState() {
   schedulerStatePath = null;
   paused = false;
   pauseReason = "";
+  consecutiveIdleTicks = 0;
 }
 
 /** Reset the circuit breaker, allowing dispatch to resume on the next tick. */
@@ -264,9 +268,11 @@ async function tick(
     if (tickCount % SMOKE_TEST_INTERVAL_TICKS === 0) {
       const candidate = buildDigest(state, summary, { productionUrl: config.productionUrl });
       if (candidate) {
-        // Skip re-dispatch if last dispatch was this exact smoke test (test passed, state unchanged)
+        // Skip re-dispatch if this exact smoke test was recently dispatched (test passed, state unchanged).
+        // But expire the dedup after SMOKE_TEST_DEDUP_TTL_MS — production can regress without state change.
         const candidateHash = computeDigestHash(candidate);
-        if (lastDispatch && lastDispatch.digestHash === candidateHash) {
+        if (lastDispatch && lastDispatch.digestHash === candidateHash
+            && (Date.now() - lastDispatch.timestamp) < SMOKE_TEST_DEDUP_TTL_MS) {
           logger.info("VirtuCorp scheduler: smoke test already dispatched and state unchanged, skipping");
         } else {
           digest = candidate;
@@ -274,7 +280,17 @@ async function tick(
       }
     }
   }
-  if (!digest) return;
+  if (!digest) {
+    consecutiveIdleTicks++;
+    if (consecutiveIdleTicks >= IDLE_WARNING_THRESHOLD) {
+      logger.warn(
+        `VirtuCorp scheduler: ${consecutiveIdleTicks} consecutive idle ticks with no dispatch — ` +
+        `system may be stuck in a silent state`,
+      );
+    }
+    return;
+  }
+  consecutiveIdleTicks = 0;
 
   logger.info(`VirtuCorp scheduler: ${digest.reason}`);
 
