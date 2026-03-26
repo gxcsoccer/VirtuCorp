@@ -5,7 +5,7 @@
  * - Role sub-agent: gets role-specific prompt + project context
  */
 
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core";
@@ -18,15 +18,16 @@ import type { VirtuCorpConfig } from "../lib/types.js";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROLES_DIR = join(__dirname, "..", "roles");
 
-const promptCache = new Map<string, string>();
+const promptCache = new Map<string, { content: string; mtimeMs: number }>();
 
 async function loadRolePrompt(role: string): Promise<string> {
-  const cached = promptCache.get(role);
-  if (cached) return cached;
-
   const filePath = join(ROLES_DIR, `${role}.md`);
+  const fileStat = await stat(filePath);
+  const cached = promptCache.get(role);
+  if (cached && cached.mtimeMs === fileStat.mtimeMs) return cached.content;
+
   const content = await readFile(filePath, "utf-8");
-  promptCache.set(role, content);
+  promptCache.set(role, { content, mtimeMs: fileStat.mtimeMs });
   return content;
 }
 
