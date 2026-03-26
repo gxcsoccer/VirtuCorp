@@ -11,6 +11,8 @@
  */
 
 import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { join } from "node:path";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core";
 import { gh } from "../lib/github-client.js";
@@ -477,6 +479,9 @@ async function tick(
       logger.warn(`VirtuCorp scheduler: failed to dispatch to CEO: ${err}`);
     }
   }
+
+  // ── Auto-commit state files so remote never drifts from local ──
+  await commitStateFiles(config.projectDir, logger);
 }
 
 // ── Sprint State Persistence ────────────────────────────────
@@ -555,6 +560,45 @@ export function isSprintExpired(state: SprintState): boolean {
   const now = new Date();
   const end = new Date(state.endDate + "T23:59:59");
   return now > end;
+}
+
+// ── State File Auto-Commit ──────────────────────────────────
+
+const execFileAsync = promisify(execFile);
+
+/**
+ * Auto-commit and push any dirty `.virtucorp/` state files to git.
+ *
+ * This prevents state drift where local files diverge from the remote,
+ * causing the scheduler to stall because the CEO reads stale state.
+ * Runs at the end of every tick — no-ops if nothing changed.
+ */
+export async function commitStateFiles(
+  projectDir: string,
+  logger: { info: (msg: string) => void; warn: (msg: string) => void },
+): Promise<void> {
+  const git = (args: string[]) =>
+    execFileAsync("git", args, { cwd: projectDir, timeout: 30_000 });
+
+  try {
+    // Check if .virtucorp/ has any uncommitted changes (staged or unstaged)
+    const { stdout: status } = await git(["status", "--porcelain", ".virtucorp/"]);
+    if (!status.trim()) return; // Nothing to commit
+
+    await git(["add", ".virtucorp/"]);
+    await git(["commit", "-m", "[vc:scheduler] Auto-sync .virtucorp/ state files"]);
+    logger.info("VirtuCorp scheduler: auto-committed .virtucorp/ state files");
+  } catch (err) {
+    logger.warn(`VirtuCorp scheduler: failed to auto-commit state files: ${err}`);
+    return; // Don't try to push if commit failed
+  }
+
+  try {
+    await git(["push"]);
+    logger.info("VirtuCorp scheduler: pushed .virtucorp/ state files to remote");
+  } catch (err) {
+    logger.warn(`VirtuCorp scheduler: committed but failed to push state files: ${err}`);
+  }
 }
 
 // ── GitHub State Collector ──────────────────────────────────

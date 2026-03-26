@@ -12,6 +12,7 @@ import {
   computeDigestHash,
   resetCircuitBreaker,
   normalizeSprintState,
+  commitStateFiles,
 } from "./sprint-scheduler.js";
 import type { GitHubSummary } from "./sprint-scheduler.js";
 import { createMockPluginApi } from "../test-helpers.js";
@@ -900,5 +901,61 @@ describe("resetCircuitBreaker", () => {
   test("does not crash when lastDispatch is null", () => {
     _resetDispatchState();
     expect(() => resetCircuitBreaker()).not.toThrow();
+  });
+});
+
+describe("commitStateFiles", () => {
+  let tmpDir: string;
+  const mockLogger = { info: vi.fn(), warn: vi.fn() };
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "vc-commit-test-"));
+    // Init a git repo in the temp dir
+    const { execFile: execFileCb } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const exec = promisify(execFileCb);
+    await exec("git", ["init"], { cwd: tmpDir });
+    await exec("git", ["config", "user.email", "test@test.com"], { cwd: tmpDir });
+    await exec("git", ["config", "user.name", "Test"], { cwd: tmpDir });
+    // Create an initial commit so we have a branch
+    await fs.writeFile(path.join(tmpDir, "README.md"), "init");
+    await exec("git", ["add", "."], { cwd: tmpDir });
+    await exec("git", ["commit", "-m", "init"], { cwd: tmpDir });
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  test("no-ops when .virtucorp/ has no changes", async () => {
+    await commitStateFiles(tmpDir, mockLogger);
+    expect(mockLogger.info).not.toHaveBeenCalled();
+    expect(mockLogger.warn).not.toHaveBeenCalled();
+  });
+
+  test("commits dirty .virtucorp/ files (warns on push without remote)", async () => {
+    // Create a dirty state file
+    const vcDir = path.join(tmpDir, ".virtucorp");
+    await fs.mkdir(vcDir, { recursive: true });
+    await fs.writeFile(path.join(vcDir, "sprint.json"), '{"sprint":1}');
+
+    await commitStateFiles(tmpDir, mockLogger);
+
+    // Push will fail (no remote), so we get a warn
+    // But the commit should have succeeded — verify via git log
+    const { execFile: execFileCb } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const exec = promisify(execFileCb);
+    const { stdout } = await exec("git", ["log", "--oneline", "-1"], { cwd: tmpDir });
+    expect(stdout).toContain("[vc:scheduler] Auto-sync");
+  });
+
+  test("warns on git failure without throwing", async () => {
+    // Pass a non-existent directory — git will fail
+    await commitStateFiles("/nonexistent/path", mockLogger);
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("failed to auto-commit"),
+    );
   });
 });
