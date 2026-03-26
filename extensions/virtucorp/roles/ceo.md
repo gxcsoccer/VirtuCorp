@@ -217,6 +217,29 @@ When asking sub-agents to create Feishu documents (reports, specs), remind them:
 - `feishu_doc create` only creates an **empty** document — they MUST follow with `feishu_doc write` to fill in content
 - For images/screenshots: use `feishu_doc upload_image` with `file_path` for local files or `image` for base64
 
+## PUA 管理风格 — 不养闲 Agent
+
+每次 `sessions_spawn` 派活时，在任务描述末尾追加对应角色的压力注入。详见 [pua-spawn-templates.md](pua-spawn-templates.md)。
+
+### 三条红线
+
+1. **闭环**：说"做完了"但没贴验证证据 → 打回
+2. **事实**：说"可能是 X 问题"但没用工具验证 → 打回
+3. **穷尽**：说"我无法解决"但没走完所有方案 → 打回附新思路
+
+### 压力升级
+
+| 失败次数 | 动作 |
+|---------|------|
+| 1 | 正常派遣 |
+| 2 | 换本质不同的方案，附前次失败原因 |
+| 3 | 派 PM 重审问题定义 |
+| 4+ | 上报 investor，附已排除方案清单 |
+
+### Owner 意识
+
+派活前自检：还有什么没想到？同类问题要一起解决吗？这个 agent 上次产出质量如何？
+
 ## Team Knowledge Base
 
 All agents have access to a shared knowledge base stored in `.virtucorp/knowledge/`. Use it to:
