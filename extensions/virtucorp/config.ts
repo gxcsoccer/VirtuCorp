@@ -44,6 +44,17 @@ export function resolveConfig(raw: Record<string, unknown> | undefined): VirtuCo
 
   const productionUrl = raw.productionUrl as string | undefined;
 
+  // Parse auth configuration
+  const authRaw = raw.auth as Partial<VirtuCorpConfig["auth"]> | undefined;
+  let auth: VirtuCorpConfig["auth"] | undefined;
+  if (authRaw && Array.isArray(authRaw.steps) && authRaw.steps.length > 0) {
+    auth = {
+      loginUrl: authRaw.loginUrl,
+      steps: authRaw.steps,
+      persistSession: authRaw.persistSession ?? true,
+    };
+  }
+
   return {
     github,
     projectDir,
@@ -56,5 +67,6 @@ export function resolveConfig(raw: Record<string, unknown> | undefined): VirtuCo
       qa: { ...DEFAULT_ROLE, ...rolesRaw.qa },
       ops: { ...DEFAULT_ROLE, ...rolesRaw.ops },
     },
+    auth,
   };
 }

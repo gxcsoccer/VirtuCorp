@@ -29,6 +29,32 @@ export type BudgetConfig = {
   circuitBreakerRetries: number;
 };
 
+/**
+ * Authentication configuration for E2E tests.
+ * Defines login steps that can be prepended to tests requiring authentication.
+ */
+export type AuthStep = {
+  /** Natural language action (e.g., "输入用户名 'test@example.com'") */
+  ai?: string;
+  /** Tap/click action */
+  aiTap?: string;
+  /** Input action with value */
+  aiInput?: { element: string; value: string };
+  /** Wait for condition */
+  aiWaitFor?: string;
+  /** Sleep for N milliseconds */
+  sleep?: number;
+};
+
+export type AuthConfig = {
+  /** Login URL to navigate to before performing auth steps */
+  loginUrl?: string;
+  /** Steps to perform authentication (e.g., enter credentials, click login) */
+  steps: AuthStep[];
+  /** Whether to store auth state for reuse across tests (default: true) */
+  persistSession?: boolean;
+};
+
 export type VirtuCorpConfig = {
   github: GitHubConfig;
   projectDir: string;
@@ -36,6 +62,8 @@ export type VirtuCorpConfig = {
   sprint: SprintConfig;
   budget: BudgetConfig;
   roles: Record<VirtuCorpRole, RoleConfig>;
+  /** Authentication configuration for E2E acceptance tests */
+  auth?: AuthConfig;
 };
 
 export type SprintState = {
