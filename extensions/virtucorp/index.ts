@@ -48,7 +48,7 @@ export default {
     // ── Tools ──────────────────────────────────────────────
     registerPRTools(api, config.github);            // gated: review + merge
     registerKnowledgeTools(api, config.projectDir); // shared: save + search + list
-    registerUIAcceptanceTools(api, config.projectDir); // gated: UI acceptance (QA + PM)
+    registerUIAcceptanceTools(api, config.projectDir, config.auth); // gated: UI acceptance (QA + PM)
     registerBrowserTools(api);                          // gated: persistent browser (QA + PM)
 
     // ── Hooks ──────────────────────────────────────────────

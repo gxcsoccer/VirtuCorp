@@ -15,12 +15,17 @@ import { mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core";
+import type { AuthConfig, AuthStep } from "./lib/types.js";
 
 const execFileAsync = promisify(execFile);
 
 const ACCEPTANCE_DIR = ".virtucorp/acceptance";
 
-export function registerUIAcceptanceTools(api: OpenClawPluginApi, projectDir: string) {
+export function registerUIAcceptanceTools(
+  api: OpenClawPluginApi,
+  projectDir: string,
+  auth?: AuthConfig,
+) {
   // ── vc_ui_accept: run UI acceptance tests ──────────────────
 
   api.registerTool(() => ({
@@ -41,11 +46,18 @@ export function registerUIAcceptanceTools(api: OpenClawPluginApi, projectDir: st
           description:
             "Array of test tasks. Each task has a name and a flow of steps. " +
             "Steps can be: ai/aiAct (interact), aiAssert (verify), aiQuery (extract data), " +
-            "aiWaitFor (wait for condition), sleep (wait ms).",
+            "aiWaitFor (wait for condition), sleep (wait ms). " +
+            "Set requiresAuth: true to prepend configured login steps before this task's flow.",
           items: {
             type: "object",
             properties: {
               name: { type: "string", description: "Task name" },
+              requiresAuth: {
+                type: "boolean",
+                description:
+                  "If true, prepend configured authentication steps before this task. " +
+                  "Requires auth config in openclawconfig.json5",
+              },
               flow: {
                 type: "array",
                 description:
@@ -69,11 +81,40 @@ export function registerUIAcceptanceTools(api: OpenClawPluginApi, projectDir: st
     },
     execute: async (_toolCallId: string, args: Record<string, unknown>) => {
       const url = args.url as string;
-      const tasks = args.tasks as Array<{ name: string; flow: Array<Record<string, unknown>> }>;
+      const tasks = args.tasks as Array<{
+        name: string;
+        requiresAuth?: boolean;
+        flow: Array<Record<string, unknown>>;
+      }>;
       const saveAs = args.save_as as string | undefined;
 
+      // Validate auth requirements
+      const authRequiredTasks = tasks.filter((t) => t.requiresAuth);
+      if (authRequiredTasks.length > 0 && !auth) {
+        return [
+          "❌ Authentication required but not configured",
+          "",
+          "The following tasks require authentication:",
+          ...authRequiredTasks.map((t) => `  - ${t.name}`),
+          "",
+          "To fix this, add an 'auth' configuration to your openclawconfig.json5:",
+          "",
+          "```json5",
+          "auth: {",
+          '  loginUrl: "https://your-app.com/login",',
+          "  steps: [",
+          '    { ai: "输入邮箱 test@example.com 到邮箱输入框" },',
+          '    { ai: "输入密码 your-password 到密码输入框" },',
+          '    { ai: "点击登录按钮" },',
+          '    { aiWaitFor: "登录成功，页面跳转到首页" },',
+          "  ],",
+          "}",
+          "```",
+        ].join("\n");
+      }
+
       // Build the YAML content
-      const yaml = buildYaml(url, tasks);
+      const yaml = buildYaml(url, tasks, auth);
 
       // Ensure acceptance directory exists
       const acceptDir = join(projectDir, ACCEPTANCE_DIR);
@@ -220,7 +261,12 @@ async function runMidscene(yamlPath: string, cwd: string): Promise<string> {
 
 function buildYaml(
   url: string,
-  tasks: Array<{ name: string; flow: Array<Record<string, unknown>> }>,
+  tasks: Array<{
+    name: string;
+    requiresAuth?: boolean;
+    flow: Array<Record<string, unknown>>;
+  }>,
+  auth?: AuthConfig,
 ): string {
   const lines: string[] = [
     "web:",
@@ -229,9 +275,33 @@ function buildYaml(
     "tasks:",
   ];
 
+  // Track whether we've already authenticated (for session persistence)
+  let authTaskAdded = false;
+
   for (const task of tasks) {
     lines.push(`  - name: "${escapeYaml(task.name)}"`);
     lines.push("    flow:");
+
+    // Prepend auth steps if required and not already authenticated
+    if (task.requiresAuth && auth && !authTaskAdded) {
+      // If there's a login URL, add navigation to it first
+      if (auth.loginUrl) {
+        lines.push(`      - ai: "导航到 ${escapeYaml(auth.loginUrl)}"`);
+        lines.push(`      - aiWaitFor: "登录页面加载完成"`);
+      }
+
+      // Add auth steps
+      for (const step of auth.steps) {
+        const stepLine = formatAuthStep(step);
+        if (stepLine) {
+          lines.push(stepLine);
+        }
+      }
+
+      authTaskAdded = auth.persistSession !== false;
+    }
+
+    // Add task's actual flow steps
     for (const step of task.flow) {
       const [key, value] = Object.entries(step)[0];
       if (typeof value === "string") {
@@ -249,6 +319,32 @@ function buildYaml(
   }
 
   return lines.join("\n") + "\n";
+}
+
+/**
+ * Format an auth step into YAML line(s).
+ */
+function formatAuthStep(step: AuthStep): string | null {
+  if (step.ai) {
+    return `      - ai: "${escapeYaml(step.ai)}"`;
+  }
+  if (step.aiTap) {
+    return `      - aiTap: "${escapeYaml(step.aiTap)}"`;
+  }
+  if (step.aiInput) {
+    return [
+      `      - aiInput:`,
+      `          element: "${escapeYaml(step.aiInput.element)}"`,
+      `          value: "${escapeYaml(step.aiInput.value)}"`,
+    ].join("\n");
+  }
+  if (step.aiWaitFor) {
+    return `      - aiWaitFor: "${escapeYaml(step.aiWaitFor)}"`;
+  }
+  if (step.sleep !== undefined) {
+    return `      - sleep: ${step.sleep}`;
+  }
+  return null;
 }
 
 function escapeYaml(s: string): string {
